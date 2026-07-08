@@ -78,25 +78,12 @@ def obter_qrcode_base64():
     except:
         return None
 
-# --- TELA DE LOGIN ---
-if not st.session_state.logado:
-    st.markdown("<h1 style='text-align: center; color: #004B87;'>CoZapTrigger</h1>", unsafe_allow_html=True)
-    with st.form(key="form_login"):
-        email = st.text_input("E-mail", placeholder="seu_usuario@crefaz.com.br").strip()
-        senha = st.text_input("Senha", type="password", placeholder="******")
-        botao_entrar = st.form_submit_button(label="Entrar no Sistema")
-        
-        if botao_entrar:
-            with st.spinner("Autenticando..."):
-                # 🟢 Na nuvem do Railway, a consulta direta ao Firebase funciona instantaneamente e com segurança!
-                resultado = st.session_state.firebase.verificar_login(email, senha)
-                
-                if resultado["sucesso"]:
-                    st.session_state.logado = True
-                    st.session_state.usuario_nome = resultado["nome"]
-                    st.rerun()
-                else:
-                    st.error(f"Falha no login: {resultado['erro']}")
+# --- TELA DE LOGIN (MODO DIAGNÓSTICO) ---
+# --- BYPASS DE LOGIN (Para rodar localmente na rede da empresa) ---
+if "logado" not in st.session_state:
+    st.session_state.logado = True
+if "usuario_nome" not in st.session_state:
+    st.session_state.usuario_nome = "Alan Garcia"
 
 # --- TELA INTERNA DO SISTEMA (PÓS-LOGIN) ---
 else:
@@ -251,7 +238,7 @@ else:
                                 "conteudo_resposta": ""
                             }
                             
-                            st.session_state.firebase.salvar_lead_disparado(dados_para_salvar)
+                            st.session_state.firebase.salvar_lead_disparado(dados_para_salvar, blocos_msg)
                             st.toast(f"✅ Enviado e registrado para {item['Nome']}!")
                         else:
                             st.error(f"❌ Erro na API ao enviar para {item['Nome']}: Code {response_api.status_code}")
