@@ -1,13 +1,22 @@
 from fastapi import FastAPI, Request, BackgroundTasks
 from google.cloud import firestore
+from google.oauth2 import service_account
 import os
 import json
 
 app = FastAPI(title="CoZapTrigger - Webhook Listener")
 
-# Inicializa o cliente do Firestore localizando suas credenciais do Firebase
-# O FirebaseAdmin usa a variável de ambiente ou o arquivo carregado
-db = firestore.Client()
+# 🔑 Inicialização explícita e à prova de falhas para o Railway usando a chave do arquivo
+NOME_ARQUIVO_CHAVE = "firebase_key.json"
+
+if os.path.exists(NOME_ARQUIVO_CHAVE):
+    credenciais = service_account.Credentials.from_service_account_file(NOME_ARQUIVO_CHAVE)
+    db = firestore.Client(credentials=credenciais, project=credenciais.project_id)
+    print("🟢 [Firebase] Conectado com sucesso usando o arquivo local!")
+else:
+    # Caso o arquivo mude de nome, ele tenta puxar da variável de ambiente do Railway
+    db = firestore.Client()
+    print("⚠️ [Firebase] Arquivo de chave não encontrado, tentando credenciais padrão.")
 
 def atualizar_status_firebase(wpp_id: str, novo_status: str, data_leitura: str = None):
     """Busca o documento pelo ID da mensagem do WhatsApp e atualiza o status"""
