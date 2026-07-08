@@ -98,3 +98,23 @@ async def receber_evento_evolution(request: Request, background_tasks: Backgroun
         return {"status": "success"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+    
+@app.post("/login-check")
+async def verificar_login_api(request: Request):
+    """Rota para o Streamlit local autenticar usuários via nuvem"""
+    try:
+        payload = await request.json()
+        email = payload.get("email")
+        senha = payload.get("senha")
+        
+        # Faz a mesma busca que o seu firebase_manager fazia localmente
+        usuarios_ref = db.collection("usuarios")
+        query = usuarios_ref.where("email", "==", email).where("senha", "==", senha).limit(1).stream()
+        
+        for doc in query:
+            dados = doc.to_dict()
+            return {"sucesso": True, "nome": dados.get("nome", "Vendedor")}
+            
+        return {"sucesso": False, "erro": "Usuário ou senha inválidos."}
+    except Exception as e:
+        return {"sucesso": False, "erro": str(e)}
