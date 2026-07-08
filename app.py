@@ -88,17 +88,8 @@ if not st.session_state.logado:
         
         if botao_entrar:
             with st.spinner("Autenticando..."):
-                # Novo método via requisição HTTP para o seu Railway (fura o bloqueio da rede)
-                try:
-                    url_login = "https://cozaptrigger-production.up.railway.app/login-check"
-                    res_login = requests.post(url_login, json={"email": email, "senha": senha}, timeout=10)
-                    if res_login.status_code == 200:
-                        resultado = res_login.json()
-                    else:
-                        resultado = {"sucesso": False, "erro": f"Erro no servidor: {res_login.status_code}"}
-                except Exception as err:
-                    resultado = {"sucesso": False, "erro": f"Falha de rede corporativa: {err}"}
-                
+                # Como vai rodar no Railway, o FirebaseManager local volta a funcionar instantaneamente!
+                resultado = st.session_state.firebase.verificar_login(email, senha)
                 if resultado["sucesso"]:
                     st.session_state.logado = True
                     st.session_state.usuario_nome = resultado["nome"]
