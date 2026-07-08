@@ -21,13 +21,26 @@ class FirebaseManager:
 
     def verificar_login(self, email, senha):
         try:
-            usuarios_ref = self.db.collection("vendedores")
-            query = usuarios_ref.where("email", "==", email).where("senha", "==", senha).limit(1).stream()
+            # 🎯 Busca direto pelo ID do documento (e-mail do vendedor)
+            email_limpo = email.strip().lower()
+            doc_ref = self.db.collection("vendedores").document(email_limpo)
+            doc = doc_ref.get()
             
-            for doc in query:
+            if doc.exists:
                 dados = doc.to_dict()
-                return {"sucesso": True, "nome": dados.get("nome", "Usuário")}
                 
+                # 🔒 Captura os campos com tudo em minúsculo
+                senha_banco = dados.get("senha")  # ✨ Corrigido para 's' minúsculo!
+                nome_usuario = dados.get("nome", "Usuário")  
+                usuario_ativo = dados.get("ativo", True)  
+                
+                if not usuario_ativo:
+                    return {"sucesso": False, "erro": "Este usuário está inativo no sistema."}
+                
+                # Compara a senha digitada com a do banco
+                if str(senha_banco).strip() == str(senha).strip():
+                    return {"sucesso": True, "nome": nome_usuario}
+                    
             return {"sucesso": False, "erro": "E-mail ou senha incorretos."}
         except Exception as e:
             return {"sucesso": False, "erro": str(e)}
@@ -39,7 +52,7 @@ class FirebaseManager:
         """
         try:
             cpf = str(dados_lead.get("cpf")).strip()
-            if not cpf:
+            if not cpf or cpf == "None":
                 raise ValueError("O CPF é obrigatório para registrar o disparo.")
                 
             lead_ref = self.db.collection("historico_disparos").document(cpf)
@@ -47,8 +60,8 @@ class FirebaseManager:
             payload = {
                 "cpf": cpf,
                 "nome": dados_lead.get("nome"),
-                "fonte": dados_lead.get("fonte"), # Pré Aprovados / Quitados
-                "criado_em_origem": dados_lead.get("criado"),
+                "fonte": dados_lead.get("fonte"), 
+                "criado_em_origem": dados_lead.get("criado_em_origem"), # ✨ Corrigido
                 "telefone": str(dados_lead.get("telefone")).strip(),
                 "data_envio": firestore.SERVER_TIMESTAMP,
                 
@@ -60,15 +73,17 @@ class FirebaseManager:
                 "bloco_cta": blocos_texto.get("cta_texto"),
                 "bloco_conclusao": blocos_texto.get("conclusao_texto"),
                 
-                # Rastreamento de Interações
-                "mensagem_id": dados_lead.get("mensagem_id"),
-                "status_envio": "Enviado", # Enviado -> Entregue -> Visualizado
+                # Rastreamento de Interações (Sincronizado perfeitamente com o Webhook)
+                "wpp_message_id": dados_lead.get("wpp_message_id"), # ✨ Corrigido para bater com o Webhook
+                "status_envio": dados_lead.get("status_envio", "ENTREGUE"), 
                 "houve_retorno": False,
                 "data_resposta": None,
                 "tempo_ate_resposta_segundos": None
             }
             
             lead_ref.set(payload, merge=True)
+            print(f"🟢 [Firebase] Lead {cpf} gravado com wpp_message_id: {dados_lead.get('wpp_message_id')}")
             return {"sucesso": True, "id": cpf}
         except Exception as e:
+            print(f"❌ [Firebase Error] Erro ao salvar lead: {e}")
             return {"sucesso": False, "erro": str(e)}

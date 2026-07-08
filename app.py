@@ -7,7 +7,6 @@ from firebase_manager import FirebaseManager
 from gerenciador_mensagens import GerenciadorMensagens
 
 # 🌐 CONFIGURAÇÕES DA SUA API EVOLUTION NO RAILWAY
-# Substitua com a URL gerada pelo Railway e com a sua Token global
 EVOLUTION_API_URL = "https://evolution-api-production-2e1d3.up.railway.app"
 INSTANCE_NAME = "carole_refeitorio"
 EVOLUTION_API_KEY = "d34725dc513a4029896e17d6091736e15c65c7fc7d1b878019f6bc43e6d26d3e"
@@ -41,7 +40,6 @@ def checar_status_instancia():
         response = requests.get(url, headers=headers, timeout=5)
         if response.status_code == 200:
             dados = response.json()
-            # Retorna CONNECTED, PAIRED, ou se precisa de QR Code
             status = dados.get("instance", {}).get("state", "DESCONECTADO")
             if status in ["CONNECTED", "open", "PAIRED"]:
                 return "Conectado"
@@ -74,18 +72,31 @@ def obter_qrcode_base64():
     try:
         response = requests.get(url, headers=headers, timeout=10)
         if response.status_code == 200:
-            return response.json().get("base64") # Retorna a string da imagem
+            return response.json().get("base64")
     except:
         return None
 
-# --- TELA DE LOGIN (MODO DIAGNÓSTICO) ---
-# --- BYPASS DE LOGIN (Para rodar localmente na rede da empresa) ---
-if "logado" not in st.session_state:
-    st.session_state.logado = True
-if "usuario_nome" not in st.session_state:
-    st.session_state.usuario_nome = "Alan Garcia"
 
-# --- TELA INTERNA DO SISTEMA (PÓS-LOGIN) ---
+# --- 🔐 TELA DE LOGIN RESTAURADA ---
+if not st.session_state.logado:
+    st.markdown("<h1 style='text-align: center; color: #004B87;'>CoZapTrigger</h1>", unsafe_allow_html=True)
+    with st.form(key="form_login"):
+        email = st.text_input("E-mail", placeholder="nome.sobrenome@crefaz.com.br").strip()
+        senha = st.text_input("Senha", type="password", placeholder="******")
+        botao_entrar = st.form_submit_button(label="Entrar no Sistema")
+        
+        if botao_entrar:
+            with st.spinner("Autenticando..."):
+                # A mágica agora acontece aqui dentro com a chave nova e busca por ID!
+                resultado = st.session_state.firebase.verificar_login(email, senha)
+                if resultado["sucesso"]:
+                    st.session_state.logado = True
+                    st.session_state.usuario_nome = resultado["nome"]
+                    st.rerun()
+                else:
+                    st.error(f"Falha no login: {resultado['erro']}")
+
+# --- 🚀 TELA INTERNA DO SISTEMA (SÓ ACESSA SE ESTIVER LOGADO) ---
 else:
     st.sidebar.markdown(f"👤 **Vendedor:**\n{st.session_state.usuario_nome}")
     st.sidebar.markdown("---")
@@ -163,10 +174,8 @@ else:
             st.error("⚠️ A API do WhatsApp precisa estar CONECTADA na barra lateral.")
         else:
             if st.button("Iniciar Fila de Disparos Seguro (Via API)", type="primary"):
-                # 🕒 Captura o horário de início dos disparos
                 horario_inicio = time.strftime("%H:%M:%S")
                 
-                # Elementos visuais de progresso
                 card_metricas = st.columns(3)
                 barra_progresso = st.progress(0)
                 status_disparo = st.empty()
@@ -174,7 +183,6 @@ else:
                 total_leads = len(dados_revisao)
                 enviados_sucesso = 0
                 
-                # Inicializa os cards de métricas na tela
                 with card_metricas[0]:
                     metrica_inicio = st.metric("Início dos Disparos", horario_inicio)
                 with card_metricas[1]:
@@ -184,15 +192,15 @@ else:
 
                 for index, item in enumerate(dados_revisao):
                     lead_orig = item["_original"]
-                    blocos_msg = item["_blocos"]  # Contém o dicionário com os blocos sorteados
+                    blocos_msg = item["_blocos"]
                     msg_texto = item["Mensagem que será Enviada"]
+                    
                     telefone = "".join(filter(str.isdigit, str(item["Telefone"])))
                     if not telefone.startswith("55") and len(telefone) >= 10:
                         telefone = f"55{telefone}"
                         
                     status_disparo.info(f"⏳ Enviando via API para {item['Nome']}...")
                     
-                    # 🚀 REQUISIÇÃO HTTP POST PARA A EVOLUTION API v2
                     url_envio = f"{EVOLUTION_API_URL}/message/sendText/{INSTANCE_NAME}"
                     headers_envio = {"Content-Type": "application/json", "apikey": EVOLUTION_API_KEY}
                     payload_envio = {
@@ -205,21 +213,18 @@ else:
                     try:
                         response_api = requests.post(url_envio, json=payload_envio, headers=headers_envio, timeout=15)
                         
-                        # 🔍 LOG DE DIAGNÓSTICO (Vai aparecer no terminal do seu PC)
                         print(f"DEBUG API: Status Code retornado = {response_api.status_code}")
                         print(f"DEBUG API: Resposta bruta = {response_api.text}")
 
                         if response_api.status_code in [200, 201, 202]:
                             enviados_sucesso += 1
                             
-                            # Trata a resposta com segurança caso o formato mude
                             try:
                                 dados_resposta = response_api.json()
                                 wpp_message_id = dados_resposta.get("key", {}).get("id") or dados_resposta.get("response", {}).get("key", {}).get("id", f"msg_{int(time.time())}")
                             except Exception:
                                 wpp_message_id = f"msg_{int(time.time())}_{item['CPF']}"
                             
-                            # 💾 SALVAMENTO NO FIREBASE
                             dados_para_salvar = {
                                 "cpf": item["CPF"],
                                 "nome": item["Nome"],
@@ -231,28 +236,25 @@ else:
                                 "horario_disparo": time.strftime("%Y-%m-%d %H:%M:%S"),
                                 "timestamp_disparo": time.time(),
                                 "template_blocos": blocos_msg, 
-                                "status_envio": "ENTREGUE",
-                                "data_leitura": "",
-                                "respondido": False,
-                                "data_resposta": "",
-                                "conteudo_resposta": ""
+                                "status_envio": "ENTREGUE"
                             }
                             
-                            st.session_state.firebase.salvar_lead_disparado(dados_para_salvar, blocos_msg)
-                            st.toast(f"✅ Enviado e registrado para {item['Nome']}!")
+                            resultado_banco = st.session_state.firebase.salvar_lead_disparado(dados_para_salvar, blocos_msg)
+                            if resultado_banco["sucesso"]:
+                                st.toast(f"✅ Enviado e registrado para {item['Nome']}!")
+                            else:
+                                st.error(f"❌ Erro ao registrar no Firebase para {item['Nome']}: {resultado_banco['erro']}")
                         else:
                             st.error(f"❌ Erro na API ao enviar para {item['Nome']}: Code {response_api.status_code}")
                             
                     except Exception as err:
                         st.error(f"❌ Falha de rede ao contatar a API para {item['Nome']}: {err}")
                     
-                    # 📊 PONTO 2: Atualização dinâmica das métricas na tela do vendedor
                     progresso_atual = (index + 1) / total_leads
                     barra_progresso.progress(progresso_atual)
                     metrica_progresso.metric("Progresso de Envio", f"{index + 1} de {total_leads}")
                     metrica_sucesso.metric("Enviados com Sucesso", str(enviados_sucesso))
                     
-                    # Delay randômico seguro antiban (5 a 50 segundos)
                     if index < total_leads - 1:
                         tempo_espera = random.randint(5, 50)
                         for segundo in range(tempo_espera, 0, -1):
