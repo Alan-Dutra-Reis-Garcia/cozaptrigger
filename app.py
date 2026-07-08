@@ -88,8 +88,9 @@ if not st.session_state.logado:
         
         if botao_entrar:
             with st.spinner("Autenticando..."):
-                # Como vai rodar no Railway, o FirebaseManager local volta a funcionar instantaneamente!
+                # 🟢 Na nuvem do Railway, a consulta direta ao Firebase funciona instantaneamente e com segurança!
                 resultado = st.session_state.firebase.verificar_login(email, senha)
+                
                 if resultado["sucesso"]:
                     st.session_state.logado = True
                     st.session_state.usuario_nome = resultado["nome"]
