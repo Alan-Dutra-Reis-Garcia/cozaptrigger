@@ -108,7 +108,7 @@ async def verificar_login_api(request: Request):
         senha = payload.get("senha")
         
         # Faz a mesma busca que o seu firebase_manager fazia localmente
-        usuarios_ref = db.collection("usuarios")
+        usuarios_ref = db.collection("vendedores")
         query = usuarios_ref.where("email", "==", email).where("senha", "==", senha).limit(1).stream()
         
         for doc in query:
