@@ -21,7 +21,7 @@ class FirebaseManager:
 
     def verificar_login(self, email, senha):
         try:
-            usuarios_ref = self.db.collection("usuarios")
+            usuarios_ref = self.db.collection("vendedores")
             query = usuarios_ref.where("email", "==", email).where("senha", "==", senha).limit(1).stream()
             
             for doc in query:
