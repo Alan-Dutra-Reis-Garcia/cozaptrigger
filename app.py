@@ -347,22 +347,41 @@ else:
         if df_completo.empty:
             st.info("Nenhum dado de histórico localizado no Firebase para gerar indicadores.")
         else:
+            # 🛡️ BLINDAGEM ANTICRASH: Garante que colunas novas existam mesmo em registros antigos
+            colunas_obrigatorias_df = [
+                "fonte", "status_envio", "houve_retorno", "tempo_ate_resposta_segundos", 
+                "timestamp_disparo", "horario_disparo", "data_envio",
+                "bloco_saudacao", "bloco_introducao", "bloco_oferta", "bloco_cta", "bloco_conclusao"
+            ]
+            for col in colunas_obrigatorias_df:
+                if col not in df_completo.columns:
+                    df_completo[col] = None
+
             # 🔍 SEÇÃO DE FILTROS GERAIS (SIDE-BY-SIDE NO TOPO)
             st.subheader("🎛️ Filtros Estratégicos")
             col_f1, col_f2, col_f3, col_f4 = st.columns(4)
             
             with col_f1:
-                opcoes_fonte = ["Todos"] + list(df_completo["fonte"].unique())
+                opcoes_fonte = ["Todos"] + list(df_completo["fonte"].dropna().unique())
                 filtro_fonte = st.selectbox("Origem / Fonte do Lead:", opcoes_fonte)
                 
             with col_f2:
-                # Tratamento de segurança para conversão de Timestamps para formato de data nativo do python
+                # 🕒 Tratamento inteligente e seguro de datas com múltiplos fallbacks
                 df_completo['data_formatada'] = pd.to_datetime(df_completo['timestamp_disparo'], unit='s', errors='coerce').dt.date
-                if df_completo['data_formatada'].isna().all():
-                    df_completo['data_formatada'] = pd.to_datetime(df_completo['horario_disparo'], errors='coerce').dt.date
+                
+                # Se o timestamp falhar (registros antigos), tenta converter pelo horario_disparo string
+                df_completo['data_formatada'] = df_completo['data_formatada'].fillna(
+                    pd.to_datetime(df_completo['horario_disparo'], errors='coerce').dt.date
+                )
+                # Se ainda assim falhar, tenta pela data_envio nativa do Firebase
+                df_completo['data_formatada'] = df_completo['data_formatada'].fillna(
+                    pd.to_datetime(df_completo['data_envio'], errors='coerce').dt.date
+                )
+                # Fallback definitivo caso o banco tenha alguma linha totalmente corrompida
+                df_completo['data_formatada'] = df_completo['data_formatada'].fillna(datetime.date.today())
                     
-                menor_data = df_completo['data_formatada'].min() or datetime.date.today()
-                maior_data = df_completo['data_formatada'].max() or datetime.date.today()
+                menor_data = df_completo['data_formatada'].min()
+                maior_data = df_completo['data_formatada'].max()
                 
                 periodo = st.date_input("Período do Disparo:", [menor_data, maior_data])
                 
