@@ -366,22 +366,26 @@ else:
                 filtro_fonte = st.selectbox("Origem / Fonte do Lead:", opcoes_fonte)
                 
             with col_f2:
-                # 🕒 Tratamento inteligente e seguro de datas com múltiplos fallbacks
-                df_completo['data_formatada'] = pd.to_datetime(df_completo['timestamp_disparo'], unit='s', errors='coerce').dt.date
+                # 🕒 Tratamento inteligente unificado no formato Datetime nativo do Pandas
+                df_completo['data_formatada'] = pd.to_datetime(df_completo['timestamp_disparo'], unit='s', errors='coerce')
                 
-                # Se o timestamp falhar (registros antigos), tenta converter pelo horario_disparo string
+                # Rota de fuga 1: Preenche com o horario_disparo string se o timestamp não existir
                 df_completo['data_formatada'] = df_completo['data_formatada'].fillna(
-                    pd.to_datetime(df_completo['horario_disparo'], errors='coerce').dt.date
+                    pd.to_datetime(df_completo['horario_disparo'], errors='coerce')
                 )
-                # Se ainda assim falhar, tenta pela data_envio nativa do Firebase
+                # Rota de fuga 2: Preenche com o data_envio nativo do Firebase
                 df_completo['data_formatada'] = df_completo['data_formatada'].fillna(
-                    pd.to_datetime(df_completo['data_envio'], errors='coerce').dt.date
+                    pd.to_datetime(df_completo['data_envio'], errors='coerce')
                 )
-                # Fallback definitivo caso o banco tenha alguma linha totalmente corrompida
-                df_completo['data_formatada'] = df_completo['data_formatada'].fillna(datetime.date.today())
+                # Rota de fuga 3: Fallback definitivo para o instante atual
+                df_completo['data_formatada'] = df_completo['data_formatada'].fillna(pd.Timestamp.now())
+                
+                # ✨ O SEGREDO: Zera horas/minutos/segundos mantendo o tipo correto (datetime64)
+                df_completo['data_formatada'] = df_completo['data_formatada'].dt.normalize()
                     
-                menor_data = df_completo['data_formatada'].min()
-                maior_data = df_completo['data_formatada'].max()
+                # Extrai os limites para o componente do Streamlit ler como data pura
+                menor_data = df_completo['data_formatada'].min().date()
+                maior_data = df_completo['data_formatada'].max().date()
                 
                 periodo = st.date_input("Período do Disparo:", [menor_data, maior_data])
                 
@@ -389,7 +393,7 @@ else:
                 filtro_retorno = st.selectbox("Teve Resposta (Retorno):", ["Todos", "Sim (True)", "Não (False)"])
                 
             with col_f4:
-                opcoes_status = ["Todos"] + list(df_completo["status_envio"].unique())
+                opcoes_status = ["Todos"] + list(df_completo["status_envio"].dropna().unique())
                 filtro_status = st.selectbox("Status Atual do WhatsApp:", opcoes_status)
 
             # 🛠️ APLICAÇÃO DA MALHA DE FILTROS NO DATAFRAME
@@ -400,7 +404,10 @@ else:
                 
             if isinstance(periodo, list) or isinstance(periodo, tuple):
                 if len(periodo) == 2:
-                    df_filtrado = df_filtrado[(df_filtrado["data_formatada"] >= periodo[0]) & (df_filtrado["data_formatada"] <= periodo[1])]
+                    # 🎯 CONVERSÃO DE SEGURANÇA: Transforma os limites do seletor em Timestamps do Pandas
+                    start_date = pd.to_datetime(periodo[0])
+                    end_date = pd.to_datetime(periodo[1])
+                    df_filtrado = df_filtrado[(df_filtrado["data_formatada"] >= start_date) & (df_filtrado["data_formatada"] <= end_date)]
                     
             if filtro_retorno != "Todos":
                 valor_bool = True if "Sim" in filtro_retorno else False
