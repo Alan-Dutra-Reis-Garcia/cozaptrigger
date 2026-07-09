@@ -47,21 +47,44 @@ def registrar_resposta_firebase(wpp_id: str, texto_resposta: str, horario_respos
         leads_ref = db.collection("historico_disparos")
         doc_alvo_id = None
         
-        # 1. Tentativa por ID da Mensagem
+        # 1. Busca por ID da mensagem (Se o cliente clicou em Responder diretamente a ela)
         if wpp_id:
             query = leads_ref.where("wpp_message_id", "==", wpp_id).limit(1).stream()
             for doc in query:
                 doc_alvo_id = doc.id
                 break
                 
-        # 2. Tentativa por Telefone (Trata com e sem o prefixo 55 do Brasil)
+        # 2. Fallback Inteligente por Telefone (Gera todas as combinações de 8/9 dígitos e máscaras)
         if not doc_alvo_id and telefone_cliente:
-            telefones_possiveis = [telefone_cliente]
-            if telefone_cliente.startswith("55"):
-                telefones_possiveis.append(telefone_cliente[2:]) # Adiciona versao sem 55
+            tel_limpo = "".join([c for c in telefone_cliente if c.isdigit()])
+            
+            # Lista que vai guardar todas as formas possíveis que o número pode estar no seu banco
+            telefones_possiveis = [tel_limpo]
+            
+            if tel_limpo.startswith("55"):
+                sem_55 = tel_limpo[2:]
+                telefones_possiveis.append(sem_55)
             else:
-                telefones_possiveis.append(f"55{telefone_cliente}") # Adiciona versao com 55
+                sem_55 = tel_limpo
+                telefones_possiveis.append(f"55{tel_limpo}")
+            
+            # 🕵️‍♂️ Quebra o calcanhar de aquiles do 9º dígito do padrão brasileiro
+            if len(sem_55) == 10:  # Se a Evolution mandou sem o 9 (Ex: 4498773682)
+                ddd = sem_55[:2]
+                num = sem_55[2:]
+                com_9 = f"{ddd}9{num}"
+                telefones_possiveis.extend([com_9, f"55{com_9}"])
+                # Adiciona formatos com máscaras comuns de CRM por garantia
+                telefones_possiveis.extend([f"({ddd}) {num[:4]}-{num[4:]}", f"({ddd}) 9{num[:4]}-{num[4:]}"])
                 
+            elif len(sem_55) == 11 and sem_55[2] == "9":  # Se a Evolution mandou com o 9 (Ex: 44998773682)
+                ddd = sem_55[:2]
+                num = sem_55[3:]
+                sem_9 = f"{ddd}{num}"
+                telefones_possiveis.extend([sem_9, f"55{sem_9}"])
+                telefones_possiveis.extend([f"({ddd}) 9{num[:4]}-{num[4:]}", f"({ddd}) {num[:4]}-{num[4:]}"])
+
+            # Procura no Firebase se o campo 'telefone' bate com QUALQUER uma das opções da lista
             query_tel = leads_ref.where("telefone", "in", telefones_possiveis).limit(1).stream()
             for doc in query_tel:
                 doc_alvo_id = doc.id
@@ -73,13 +96,12 @@ def registrar_resposta_firebase(wpp_id: str, texto_resposta: str, horario_respos
                 "data_resposta": horario_resposta,
                 "conteudo_resposta": texto_resposta
             })
-            print(f"💬 [Firebase] Resposta gravada com sucesso para o CPF: {doc_alvo_id}")
+            print(f"💬 [Firebase] Resposta gravada com sucesso para o lead: {doc_alvo_id}")
         else:
-            print(f"⚠️ [Firebase] Nenhum lead localizado para o telefone: {telefone_cliente}")
+            print(f"⚠️ [Firebase] Nenhum lead encontrado para as variantes: {telefones_possiveis}")
             
     except Exception as e:
-        print(f"❌ Erro ao registrar resposta: {e}")
-
+        print(f"❌ Erro ao registrar resposta no Firebase: {e}")
 @app.post("/webhook")
 async def receber_evento_evolution(request: Request, background_tasks: BackgroundTasks):
     try:
