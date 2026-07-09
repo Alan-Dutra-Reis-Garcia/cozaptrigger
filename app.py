@@ -87,7 +87,6 @@ if not st.session_state.logado:
         
         if botao_entrar:
             with st.spinner("Autenticando..."):
-                # A mágica agora acontece aqui dentro com a chave nova e busca por ID!
                 resultado = st.session_state.firebase.verificar_login(email, senha)
                 if resultado["sucesso"]:
                     st.session_state.logado = True
@@ -96,15 +95,13 @@ if not st.session_state.logado:
                 else:
                     st.error(f"Falha no login: {resultado['erro']}")
 
-# --- 🚀 TELA INTERNA DO SISTEMA (SÓ ACESSA SE ESTIVER LOGADO) ---
+# --- 🚀 TELA INTERNA DO SISTEMA ---
 else:
     st.sidebar.markdown(f"👤 **Vendedor:**\n{st.session_state.usuario_nome}")
     st.sidebar.markdown("---")
     
     st.sidebar.subheader("🔌 Conexão WhatsApp (API)")
-    
-    # Valida o status atual vindo da Nuvem
-    st.session_state.wpp_status = checar_status_instancia()
+    st.sidebar.session_state.wpp_status = checar_status_instancia()
     
     if st.session_state.wpp_status == "Instância Não Criada":
         if st.sidebar.button("⚙️ Inicializar Instância na Nuvem"):
@@ -118,7 +115,6 @@ else:
         if st.sidebar.button("🔄 Verificar Status"):
             st.rerun()
             
-        # Exibe o QR Code dinâmico vindo da API caso esteja aguardando leitura
         if st.session_state.wpp_status == "Aguardando QR Code":
             qr_base64 = obter_qrcode_base64()
             if qr_base64:
@@ -135,6 +131,39 @@ else:
 
     aba_upload, aba_colar = st.tabs(["📁 Subir Planilha (CSV/Excel)", "✍️ Copiar e Colar (Ctrl+V)"])
     lista_leads_brutos = []
+
+    # --- ABA 1: SUBIR PLANILHA (CSV/EXCEL) ---
+    with aba_upload:
+        st.subheader("Carregar arquivo de dados")
+        st.markdown("A planilha deve conter obrigatoriamente as colunas: **cpf**, **nome**, **fonte**, **criado**, **telefone**.")
+        arquivo_carregado = st.file_uploader("Selecione o arquivo (.csv, .xlsx, .xls)", type=["csv", "xlsx", "xls"])
+        
+        if arquivo_carregado is not None:
+            try:
+                if arquivo_carregado.name.endswith('.csv'):
+                    df_upload = pd.read_csv(arquivo_carregado, sep=None, engine='python', dtype=str)
+                else:
+                    df_upload = pd.read_excel(arquivo_carregado, dtype=str)
+                
+                # Normaliza o nome das colunas para evitar problemas de maiúsculas/minúsculas
+                df_upload.columns = [c.strip().lower() for c in df_upload.columns]
+                colunas_obrigatorias = ['cpf', 'nome', 'fonte', 'criado', 'telefone']
+                
+                if all(col in df_upload.columns for col in colunas_obrigatorias):
+                    for _, row in df_upload.iterrows():
+                        if pd.notna(row['telefone']) and str(row['telefone']).strip() != "":
+                            lista_leads_brutos.append({
+                                "cpf": str(row['cpf']).strip() if pd.notna(row['cpf']) else "",
+                                "nome": str(row['nome']).strip() if pd.notna(row['nome']) else "Cliente",
+                                "fonte": str(row['fonte']).strip() if pd.notna(row['fonte']) else "Não Informada",
+                                "criado": str(row['criado']).strip() if pd.notna(row['criado']) else "",
+                                "telefone": str(row['telefone']).strip()
+                            })
+                    st.success(f"📊 {len(lista_leads_brutos)} contatos importados com sucesso da planilha!")
+                else:
+                    st.error(f"❌ Erro na estrutura: O arquivo precisa conter as colunas: {', '.join(colunas_obrigatorias)}")
+            except Exception as e:
+                st.error(f"❌ Erro ao processar o arquivo: {e}")
 
     # --- ABA 2: COPIAR E COLAR (CTRL+V) ---
     with aba_colar:
@@ -155,6 +184,12 @@ else:
         st.markdown("---")
         st.subheader("📋 Revisão dos Disparos Dinâmicos")
         
+        # 🎯 BULLETS DE INFORMAÇÕES DE CARREGAMENTO
+        st.markdown(f"""
+        * 🔢 **Total de registros identificados:** {len(lista_leads_brutos)} contatos prontos para processamento.
+        * 🛡️ **Estratégia Antiban:** Gerando blocos randômicos e textos dinâmicos para cada envio individual.
+        """)
+        
         dados_revisao = []
         for lead in lista_leads_brutos:
             msg_final, blocos = st.session_state.gerenciador_msg.gerar_mensagem_randomica(
@@ -167,7 +202,7 @@ else:
             })
         
         df_revisao = pd.DataFrame(dados_revisao)
-        st.dataframe(df_revisao[["CPF", "Nome", "Fonte", "Telefone", "Mensagem que será Enviada"]], width='stretch')
+        st.dataframe(df_revisao[["CPF", "Nome", "Fonte", "Telefone", "Mensagem que será Enviada"]], use_container_width=True)
 
         st.markdown("### ⚡ Execução")
         if st.session_state.wpp_status != "Conectado":
@@ -175,10 +210,17 @@ else:
         else:
             if st.button("Iniciar Fila de Disparos Seguro (Via API)", type="primary"):
                 horario_inicio = time.strftime("%H:%M:%S")
+                timestamp_inicio_total = time.time()
                 
-                card_metricas = st.columns(3)
+                # 📊 CARD MACRO ATUALIZADO (Agora com 4 Colunas)
+                card_metricas = st.columns(4)
                 barra_progresso = st.progress(0)
                 status_disparo = st.empty()
+                
+                # 📋 PAINEL DO HISTÓRICO LINHA A LINHA
+                st.markdown("### 📋 Acompanhamento Detalhado (Linha a Linha)")
+                placeholder_tabela_viva = st.empty()
+                historico_envios_locais = []
                 
                 total_leads = len(dados_revisao)
                 enviados_sucesso = 0
@@ -189,6 +231,8 @@ else:
                     metrica_progresso = st.metric("Progresso de Envio", f"0 de {total_leads}")
                 with card_metricas[2]:
                     metrica_sucesso = st.metric("Enviados com Sucesso", "0")
+                with card_metricas[3]:
+                    metrica_tempo_medio = st.metric("Tempo Médio / Disparo", "0.0s")
 
                 for index, item in enumerate(dados_revisao):
                     lead_orig = item["_original"]
@@ -210,14 +254,13 @@ else:
                         "linkPreview": False
                     }
                     
+                    status_atual_linha = "Erro"
                     try:
                         response_api = requests.post(url_envio, json=payload_envio, headers=headers_envio, timeout=15)
                         
-                        print(f"DEBUG API: Status Code retornado = {response_api.status_code}")
-                        print(f"DEBUG API: Resposta bruta = {response_api.text}")
-
                         if response_api.status_code in [200, 201, 202]:
                             enviados_sucesso += 1
+                            status_atual_linha = "Sucesso"
                             
                             try:
                                 dados_resposta = response_api.json()
@@ -239,21 +282,36 @@ else:
                                 "status_envio": "ENTREGUE"
                             }
                             
-                            resultado_banco = st.session_state.firebase.salvar_lead_disparado(dados_para_salvar, blocos_msg)
-                            if resultado_banco["sucesso"]:
-                                st.toast(f"✅ Enviado e registrado para {item['Nome']}!")
-                            else:
-                                st.error(f"❌ Erro ao registrar no Firebase para {item['Nome']}: {resultado_banco['erro']}")
+                            st.session_state.firebase.salvar_lead_disparado(dados_para_salvar, blocos_msg)
+                            st.toast(f"✅ Enviado para {item['Nome']}!")
                         else:
                             st.error(f"❌ Erro na API ao enviar para {item['Nome']}: Code {response_api.status_code}")
                             
                     except Exception as err:
                         st.error(f"❌ Falha de rede ao contatar a API para {item['Nome']}: {err}")
                     
+                    # 🕒 Captura hora do disparo atual e alimenta a tabela viva abaixo do macro
+                    hora_disparo_atual = time.strftime("%H:%M:%S")
+                    historico_envios_locais.append({
+                        "Nome": item["Nome"],
+                        "Telefone": item["Telefone"],
+                        "Mensagem": msg_texto,
+                        "Hora do Disparo": hora_disparo_atual,
+                        "Status": status_atual_linha
+                    })
+                    # Atualiza o componente visual de tabela com os novos dados estruturados
+                    placeholder_tabela_viva.dataframe(pd.DataFrame(historico_envios_locais), use_container_width=True)
+                    
+                    # ⏱️ CÁLCULO DE TEMPO MÉDIO REAL DE DISPARO
+                    tempo_decorrido_total = time.time() - timestamp_inicio_total
+                    tempo_medio_atual = tempo_decorrido_total / (index + 1)
+                    
+                    # Atualiza as métricas macros superiores
                     progresso_atual = (index + 1) / total_leads
                     barra_progresso.progress(progresso_atual)
                     metrica_progresso.metric("Progresso de Envio", f"{index + 1} de {total_leads}")
                     metrica_sucesso.metric("Enviados com Sucesso", str(enviados_sucesso))
+                    metrica_tempo_medio.metric("Tempo Médio / Disparo", f"{tempo_medio_atual:.1f}s")
                     
                     if index < total_leads - 1:
                         tempo_espera = random.randint(5, 50)
