@@ -38,7 +38,7 @@ def atualizar_status_firebase(wpp_id: str, novo_status: str, data_leitura: str =
             print(f"🔥 [Firebase] Lead {doc.id} atualizado para: {novo_status}")
             
         if not encontrou:
-            print(f"⚠️ [Firebase] ID {wpp_id} não encontrado no banco.")
+            print(f"⚠️ [Firebase] ID de mensagem {wpp_id} nao encontrado.")
     except Exception as e:
         print(f"❌ Erro ao atualizar status: {e}")
 
@@ -47,14 +47,22 @@ def registrar_resposta_firebase(wpp_id: str, texto_resposta: str, horario_respos
         leads_ref = db.collection("historico_disparos")
         doc_alvo_id = None
         
+        # 1. Tentativa por ID da Mensagem
         if wpp_id:
             query = leads_ref.where("wpp_message_id", "==", wpp_id).limit(1).stream()
             for doc in query:
                 doc_alvo_id = doc.id
                 break
                 
+        # 2. Tentativa por Telefone (Trata com e sem o prefixo 55 do Brasil)
         if not doc_alvo_id and telefone_cliente:
-            query_tel = leads_ref.where("telefone", "==", telefone_cliente).limit(1).stream()
+            telefones_possiveis = [telefone_cliente]
+            if telefone_cliente.startswith("55"):
+                telefones_possiveis.append(telefone_cliente[2:]) # Adiciona versao sem 55
+            else:
+                telefones_possiveis.append(f"55{telefone_cliente}") # Adiciona versao com 55
+                
+            query_tel = leads_ref.where("telefone", "in", telefones_possiveis).limit(1).stream()
             for doc in query_tel:
                 doc_alvo_id = doc.id
                 break
@@ -65,9 +73,9 @@ def registrar_resposta_firebase(wpp_id: str, texto_resposta: str, horario_respos
                 "data_resposta": horario_resposta,
                 "conteudo_resposta": texto_resposta
             })
-            print(f"💬 [Firebase] Resposta gravada para o lead: {doc_alvo_id}")
+            print(f"💬 [Firebase] Resposta gravada com sucesso para o CPF: {doc_alvo_id}")
         else:
-            print(f"⚠️ [Firebase] Nenhum lead achado para ID {wpp_id} ou Tel {telefone_cliente}")
+            print(f"⚠️ [Firebase] Nenhum lead localizado para o telefone: {telefone_cliente}")
             
     except Exception as e:
         print(f"❌ Erro ao registrar resposta: {e}")
@@ -79,26 +87,27 @@ async def receber_evento_evolution(request: Request, background_tasks: Backgroun
         evento_original = payload.get("event", "")
         data = payload.get("data", {})
         
-        # 🔍 LOG MÁGICO: Mostra no Railway exatamente o que está chegando da Evolution
-        print(f"📥 [Webhook] Evento Recebido: '{evento_original}'")
-        
-        # Normaliza o evento para minúsculo e padroniza os pontos (ex: MESSAGES_UPDATE -> messages.update)
+        # Se a Evolution enviar os dados envelopados em uma lista, extrai o primeiro item
+        if isinstance(data, list) and len(data) > 0:
+            data = data[0]
+            
         evento = evento_original.lower().replace("_", ".")
+        print(f"📥 [Webhook] Processando evento: '{evento}'")
         
-        # 1. CAPTURA MUDANÇAS DE STATUS (ENTREGUE / LIDO)
+        # 1. MUDANÇAS DE STATUS (ENTREGUE / LIDO)
         if evento == "messages.update":
             wpp_id = data.get("key", {}).get("id")
-            status = data.get("status")
-            print(f"   -> Status da mensagem {wpp_id}: {status}")
+            # ✨ CAPTURA INTELIGENTE: Pega o status independente de onde a API colocou
+            status = data.get("status") or data.get("update", {}).get("status")
             
-            if wpp_id:
+            if wpp_id and status:
                 if status == "READ":
                     horario_atual = time.strftime("%Y-%m-%d %H:%M:%S")
                     background_tasks.add_task(atualizar_status_firebase, wpp_id, "LIDO", horario_atual)
-                elif status == "DELIVRD":
+                elif status in ["DELIVRD", "RECEIVED"]:
                     background_tasks.add_task(atualizar_status_firebase, wpp_id, "ENTREGUE")
 
-        # 2. CAPTURA SE O CLIENTE RESPONDEU
+        # 2. CAPTURA DE RESPOSTAS
         elif evento == "messages.upsert":
             from_me = data.get("key", {}).get("fromMe", False)
             
@@ -112,7 +121,6 @@ async def receber_evento_evolution(request: Request, background_tasks: Backgroun
                                 data.get("message", {}).get("extendedTextMessage", {}).get("text", "")
                 
                 horario_resposta = time.strftime("%Y-%m-%d %H:%M:%S")
-                print(f"   -> Cliente {telefone_cliente} digitou: '{texto_cliente}'")
                 
                 if texto_cliente:
                     background_tasks.add_task(
@@ -125,5 +133,5 @@ async def receber_evento_evolution(request: Request, background_tasks: Backgroun
                     
         return {"status": "success"}
     except Exception as e:
-        print(f"💥 Erro crítico no processamento do webhook: {e}")
+        print(f"💥 Erro no processamento do webhook: {e}")
         return {"status": "error", "message": str(e)}
