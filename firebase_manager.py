@@ -4,21 +4,26 @@ import os
 
 class FirebaseManager:
     def __init__(self):
-        # Garante o caminho correto do arquivo json na raiz do projeto no Railway
-        path_chave = os.path.join(os.path.dirname(__file__), "firebase_key.json")
-        
+        import json
         if not firebase_admin._apps:
-            if os.path.exists(path_chave):
-                cred = credentials.Certificate(path_chave)
+            # 1. Se estiver na Nuvem (Railway), lê a variável de ambiente
+            if "FIREBASE_KEY_JSON" in os.environ:
+                cred_json = json.loads(os.environ.get("FIREBASE_KEY_JSON"))
+                cred = credentials.Certificate(cred_json)
                 firebase_admin.initialize_app(cred)
-                print("🟢 [Firebase] Inicializado com sucesso via arquivo de chaves!")
+                print("🟢 [Firebase] Inicializado com sucesso via Variável de Ambiente!")
+            
+            # 2. Se estiver Local (Seu PC), lê o arquivo físico
             else:
-                # Se não achar o arquivo, tenta ler como variável de ambiente do Railway
-                firebase_admin.initialize_app()
-                print("⚠️ [Firebase] Arquivo firebase_key.json não encontrado. Usando credenciais padrão.")
+                path_chave = os.path.join(os.path.dirname(__file__), "firebase_key.json")
+                if os.path.exists(path_chave):
+                    cred = credentials.Certificate(path_chave)
+                    firebase_admin.initialize_app(cred)
+                    print("🟢 [Firebase] Inicializado com sucesso via arquivo local!")
+                else:
+                    raise FileNotFoundError("Chave do Firebase não encontrada nem local nem na nuvem.")
                 
         self.db = firestore.client()
-
     def verificar_login(self, email, senha):
         try:
             # 🎯 Busca direto pelo ID do documento (e-mail do vendedor)
