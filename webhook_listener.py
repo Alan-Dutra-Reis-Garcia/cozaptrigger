@@ -104,6 +104,13 @@ def registrar_resposta_firebase(wpp_id: str, texto_resposta: str, horario_respos
 
         if doc_alvo:
             dados_existentes = doc_alvo.to_dict()
+            
+            # 🔒 TRAVA DE RETORNO ÚNICO
+            # Se o campo 'houve_retorno' já for True, ignora as próximas mensagens
+            if dados_existentes.get("houve_retorno") is True:
+                print(f"🔒 [Firebase] Lead {doc_alvo.id} ja respondeu anteriormente. Ignorando mensagens adicionais.")
+                return
+
             data_envio_dt = dados_existentes.get("data_envio")
             
             tempo_segundos = None
@@ -115,7 +122,7 @@ def registrar_resposta_firebase(wpp_id: str, texto_resposta: str, horario_respos
                 diff = agora_utc - data_envio_dt
                 tempo_segundos = int(diff.total_seconds())
 
-            # 📝 Payload limpo: 'respondido' removido, mantendo apenas 'houve_retorno'
+            # Prepara o payload definitivo da PRIMEIRA resposta
             dados_atualizacao = {
                 "houve_retorno": True,
                 "status_envio": "LIDO",
@@ -127,7 +134,7 @@ def registrar_resposta_firebase(wpp_id: str, texto_resposta: str, horario_respos
                 dados_atualizacao["tempo_ate_resposta_segundos"] = tempo_segundos
 
             leads_ref.document(doc_alvo.id).update(dados_atualizacao)
-            print(f"💬 [Firebase] Resposta registrada com sucesso para o CPF: {doc_alvo.id}")
+            print(f"💬 [Firebase] Primeira resposta registrada com sucesso para o CPF: {doc_alvo.id}")
             
     except Exception as e:
         print(f"❌ Erro ao registrar resposta no Firebase: {e}")
