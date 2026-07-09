@@ -367,23 +367,24 @@ else:
                 
             with col_f2:
                 # 🕒 Tratamento inteligente unificado no formato Datetime nativo do Pandas
-                df_completo['data_formatada'] = pd.to_datetime(df_completo['timestamp_disparo'], unit='s', errors='coerce')
+                # Usamos utc=True inicialmente para aceitar o fuso horário do Firebase sem quebrar
+                df_completo['data_formatada'] = pd.to_datetime(df_completo['timestamp_disparo'], unit='s', errors='coerce', utc=True)
                 
                 # Rota de fuga 1: Preenche com o horario_disparo string se o timestamp não existir
                 df_completo['data_formatada'] = df_completo['data_formatada'].fillna(
-                    pd.to_datetime(df_completo['horario_disparo'], errors='coerce')
+                    pd.to_datetime(df_completo['horario_disparo'], errors='coerce', utc=True)
                 )
                 # Rota de fuga 2: Preenche com o data_envio nativo do Firebase
                 df_completo['data_formatada'] = df_completo['data_formatada'].fillna(
-                    pd.to_datetime(df_completo['data_envio'], errors='coerce')
+                    pd.to_datetime(df_completo['data_envio'], errors='coerce', utc=True)
                 )
-                # Rota de fuga 3: Fallback definitivo para o instante atual
-                df_completo['data_formatada'] = df_completo['data_formatada'].fillna(pd.Timestamp.now())
+                # Rota de fuga 3: Fallback definitivo para o instante atual em formato UTC
+                df_completo['data_formatada'] = df_completo['data_formatada'].fillna(pd.Timestamp.now(tz='UTC'))
                 
-                # ✨ O SEGREDO: Zera horas/minutos/segundos mantendo o tipo correto (datetime64)
-                df_completo['data_formatada'] = df_completo['data_formatada'].dt.normalize()
+                # ✨ O SEGREDO: Forçamos a conversão, removemos o fuso horário (tz_localize(None)) e normalizamos as horas!
+                df_completo['data_formatada'] = pd.to_datetime(df_completo['data_formatada'], utc=True).dt.tz_localize(None).dt.normalize()
                     
-                # Extrai os limites para o componente do Streamlit ler como data pura
+                # Extrai os limites para o componente do Streamlit ler como data pura (.date())
                 menor_data = df_completo['data_formatada'].min().date()
                 maior_data = df_completo['data_formatada'].max().date()
                 
@@ -404,7 +405,7 @@ else:
                 
             if isinstance(periodo, list) or isinstance(periodo, tuple):
                 if len(periodo) == 2:
-                    # 🎯 CONVERSÃO DE SEGURANÇA: Transforma os limites do seletor em Timestamps do Pandas
+                    # 🎯 Como removemos o fuso da coluna acima, a comparação direta aqui fica 100% perfeita e segura
                     start_date = pd.to_datetime(periodo[0])
                     end_date = pd.to_datetime(periodo[1])
                     df_filtrado = df_filtrado[(df_filtrado["data_formatada"] >= start_date) & (df_filtrado["data_formatada"] <= end_date)]
