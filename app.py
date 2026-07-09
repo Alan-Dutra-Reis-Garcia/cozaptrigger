@@ -72,11 +72,13 @@ def obter_qrcode_base64():
 
 def calcular_metricas_completas(df_alvo):
     """Calcula a tabela comparativa de métricas baseada em qualquer agrupamento de DataFrame"""
-    if df_alvo.empty:
-        return pd.DataFrame()
-        
     resumos = []
+    
+    # O loop funciona perfeitamente percorrendo o objeto GroupBy
     for grupo, sub_df in df_alvo:
+        if sub_df.empty:
+            continue
+            
         disp = len(sub_df)
         entregues = len(sub_df[sub_df['status_envio'].isin(['ENTREGUE', 'LIDO'])])
         lidos = len(sub_df[sub_df['status_envio'] == 'LIDO'])
@@ -102,6 +104,11 @@ def calcular_metricas_completas(df_alvo):
             "% Resp/Disp": f"{p_resp_vs_disp:.1f}%",
             "T. Médio Retorno": f"{int(t_medio)}s" if t_medio > 0 else "0s"
         })
+        
+    # Se nenhuma linha foi agrupada, retorna um DataFrame vazio com segurança
+    if not resumos:
+        return pd.DataFrame()
+        
     return pd.DataFrame(resumos).set_index("Item/Grupo")
 
 
