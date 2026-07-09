@@ -101,7 +101,7 @@ else:
     st.sidebar.markdown("---")
     
     st.sidebar.subheader("🔌 Conexão WhatsApp (API)")
-    st.sidebar.session_state.wpp_status = checar_status_instancia()
+    st.session_state.wpp_status = checar_status_instancia()
     
     if st.session_state.wpp_status == "Instância Não Criada":
         if st.sidebar.button("⚙️ Inicializar Instância na Nuvem"):

@@ -5,3 +5,4 @@ fastapi
 uvicorn
 google-cloud-firestore
 firebase-admin
+openpyxl
