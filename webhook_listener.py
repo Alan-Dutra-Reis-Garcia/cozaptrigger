@@ -151,25 +151,39 @@ async def receber_evento_evolution(request: Request, background_tasks: Backgroun
             data = data[0]
             
         evento = evento_original.lower().replace("_", ".")
-        remote_jid = data.get("key", {}).get("remoteJid", "")
-        telefone_cliente = remote_jid.split("@")[0] if "@" in remote_jid else ""
         
+        # -----------------------------------------------------------------
         # 1. MUDANÇAS DE STATUS (ENTREGUE / LIDO)
+        # -----------------------------------------------------------------
         if evento == "messages.update":
-            wpp_id = data.get("key", {}).get("id")
-            status = data.get("update", {}).get("status") or data.get("status")
+            # 🔥 CAPTURA HÍBRIDA: Lê o 'keyId' direto do JSON plano que você enviou
+            wpp_id = data.get("keyId") or data.get("key", {}).get("id")
+            remote_jid = data.get("remoteJid") or data.get("key", {}).get("remoteJid", "")
+            status = data.get("status") or data.get("update", {}).get("status")
+            
+            # Extrai e limpa o telefone (removendo marcações de privacidade como :32@lid)
+            telefone_cliente = remote_jid.split("@")[0] if "@" in remote_jid else ""
+            if ":" in telefone_cliente:
+                telefone_cliente = telefone_cliente.split(":")[0]
             
             if wpp_id and status:
-                # Captura o padrão correto de leitura
+                # Se o status mapeado for de leitura
                 if status in ["READ", "4"]:
                     horario_atual = time.strftime("%Y-%m-%d %H:%M:%S")
                     background_tasks.add_task(atualizar_status_firebase, wpp_id, "LIDO", telefone_cliente, horario_atual)
-                # ✨ Captura o padrão correto de entrega mapeado do seu log (DELIVERY_ACK ou 3)
+                # Se o status mapeado for de entrega
                 elif status in ["DELIVERY_ACK", "DELIVRD", "RECEIVED", "3"]:
                     background_tasks.add_task(atualizar_status_firebase, wpp_id, "ENTREGUE", telefone_cliente)
 
+        # -----------------------------------------------------------------
         # 2. CAPTURA DE RESPOSTAS
+        # -----------------------------------------------------------------
         elif evento == "messages.upsert":
+            remote_jid = data.get("key", {}).get("remoteJid", "")
+            telefone_cliente = remote_jid.split("@")[0] if "@" in remote_jid else ""
+            if ":" in telefone_cliente:
+                telefone_cliente = telefone_cliente.split(":")[0]
+                
             from_me = data.get("key", {}).get("fromMe", False)
             
             if not from_me:
