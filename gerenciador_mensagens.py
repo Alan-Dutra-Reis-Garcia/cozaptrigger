@@ -47,7 +47,7 @@ class GerenciadorMensagens:
                 ],
                 "ofertas": [
                     "Esse valor pode estar disponível e podemos verificar as melhores condições para o parcelmento.",
-                    "Se você tiver interesse em um fôlego financeiro, podemos simular as condições agora.",
+                    "Se você tiver interesse in um fôlego financeiro, podemos simular as condições agora.",
                     "Caso queira aproveitar essa liberação, conseguimos excelentes vantagens para o seu caso.",
                     "Podemos fazer uma simulação rápida para você ver como ficam as parcelas.",
                     "Vale a pena dar uma olhada nas condições especiais."
@@ -62,6 +62,39 @@ class GerenciadorMensagens:
                 "conclusoes": [
                     "Aguardamos seu retorno! CREFAZ", "Conte com a gente! CREFAZ", "Tenha um excelente dia! CREFAZ",
                     "Estamos à disposição para ajudar! CREFAZ", "Até logo! CREFAZ", "Fico no aguardo! CREFAZ", "Será um prazer te atender! CREFAZ"
+                ]
+            },
+            "Paraná": {
+                "saudacoes": ["Oie", "Olá", "Oii", "Oi", "Ei", "Oii"],
+                "introducoes": [
+                    "Passando para avisar que chegou uma super novidade para a sua região.",
+                    "Temos ótimas notícias exclusivas que acabaram de ser liberadas para os moradores do Paraná.",
+                    "Disponibilizamos uma nova liberação de crédito pessoal na sua cidade.",
+                    "Uma nova oportunidade de crédito pessoal acabou de ser mapeada para a nossa região do Paraná.",
+                    "Entramos em contato porque a sua cidade conta com uma condição exclusiva no nosso sistema."
+                ],
+                "ofertas": [
+                    "Se você estiver precisando de um fôlego financeiro, temos excelentes condições de crédito.",
+                    "Podemos analisar uma proposta de crédito sob medida para os seus planos hoje.",
+                    "Vale a pena conferir as opções de crédito com taxas especiais disponíveis para o seu perfil.",
+                    "Caso uma linha de crédito faça sentido para você agora, conseguimos liberar ótimas vantagens.",
+                    "Podemos fazer uma simulação rápida de crédito ideal para o que você precisa no momento."
+                ],
+                "ctas": [
+                    "É só me responder por aqui.",
+                    "Basta responder esta mensagem para saber mais.",
+                    "Responda por aqui e eu te passo os detalhes.",
+                    "Fale comigo por esta conversa para conversarmos.",
+                    "Dê um sinal por esta conversa e eu te explico como funciona."
+                ],
+                "conclusoes": [
+                    "Seria uma honra ter você como nosso cliente! CREFAZ",
+                    "Queremos muito ter você conosco! CREFAZ",
+                    "Estamos ansiosos para te atender e ter você como cliente! CREFAZ",
+                    "Será um prazer enorme ter você como cliente! CREFAZ",
+                    "Venha ser nosso cliente e conte sempre com a gente! CREFAZ",
+                    "Ficamos no aguardo para receber você como cliente! CREFAZ",
+                    "Esperamos seu retorno para fecharmos essa parceria! CREFAZ"
                 ]
             }
         }
