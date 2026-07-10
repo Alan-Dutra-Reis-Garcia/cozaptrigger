@@ -14,6 +14,8 @@ EVOLUTION_API_KEY = "d34725dc513a4029896e17d6091736e15c65c7fc7d1b878019f6bc43e6d
 
 # Configuração da página do Streamlit
 st.set_page_config(page_title="CoZapTrigger - Sistema Integrado", page_icon="🚀", layout="wide")
+# Configuração explícita do Fuso Horário de Brasília (UTC-3)
+FUSO_BR = datetime.timezone(datetime.timedelta(hours=-3))
 
 # Inicializa as conexões na sessão do Streamlit
 if "firebase" not in st.session_state:
@@ -170,11 +172,20 @@ else:
 
 
     # =========================================================================
-    # MUNDO 1: FILA DE DISPAROS
+    # MUNDO 1: FILA DE DISPAROS (COM PAUSA E CANCELAMENTO)
     # =========================================================================
     if menu_navegacao == "🚀 Fila de Disparos":
         st.title("🚀 Painel de Disparos - CoZapTrigger")
         st.markdown("---")
+
+        # 🧠 INICIALIZAÇÃO DOS ESTADOS DE CONTROLE DA FILA
+        if "fila_ativa" not in st.session_state: st.session_state.fila_ativa = False
+        if "fila_pausada" not in st.session_state: st.session_state.fila_pausada = False
+        if "fila_indice" not in st.session_state: st.session_state.fila_indice = 0
+        if "fila_enviados_sucesso" not in st.session_state: st.session_state.fila_enviados_sucesso = 0
+        if "fila_horario_inicio" not in st.session_state: st.session_state.fila_horario_inicio = ""
+        if "fila_timestamp_inicio_total" not in st.session_state: st.session_state.fila_timestamp_inicio_total = 0.0
+        if "fila_historico" not in st.session_state: st.session_state.fila_historico = []
 
         aba_upload, aba_colar = st.tabs(["📁 Subir Planilha (CSV/Excel)", "✍️ Copiar e Colar (Ctrl+V)"])
         lista_leads_brutos = []
@@ -247,91 +258,152 @@ else:
             if st.session_state.wpp_status != "Conectado":
                 st.error("⚠️ A API do WhatsApp precisa estar CONECTADA na barra lateral.")
             else:
-                if st.button("Iniciar Fila de Disparos Seguro (Via API)", type="primary"):
-                    horario_inicio = time.strftime("%H:%M:%S")
-                    timestamp_inicio_total = time.time()
-                    
-                    card_metricas = st.columns(4)
-                    barra_progresso = st.progress(0)
-                    status_disparo = st.empty()
-                    
-                    st.markdown("### 📋 Acompanhamento Detalhado (Linha a Linha)")
-                    placeholder_tabela_viva = st.empty()
-                    historico_envios_locais = []
-                    
-                    total_leads = len(dados_revisao)
-                    enviados_sucesso = 0
-                    
-                    with card_metricas[0]: metrica_inicio = st.metric("Início dos Disparos", horario_inicio)
-                    with card_metricas[1]: metrica_progresso = st.metric("Progresso de Envio", f"0 de {total_leads}")
-                    with card_metricas[2]: metrica_sucesso = st.metric("Enviados com Sucesso", "0")
-                    with card_metricas[3]: metrica_tempo_medio = st.metric("Tempo Médio / Disparo", "0.0s")
+                total_leads = len(dados_revisao)
 
-                    for index, item in enumerate(dados_revisao):
-                        lead_orig = item["_original"]
-                        blocos_msg = item["_blocos"]
-                        msg_texto = item["Mensagem que será Enviada"]
+                # 🎛️ BOTÃO DE START INICIAL (Só aparece se a fila não estiver rodando e estiver no começo)
+                if not st.session_state.fila_ativa and st.session_state.fila_indice == 0:
+                    if st.button("Iniciar Fila de Disparos Seguro (Via API)", type="primary"):
+                        st.session_state.fila_ativa = True
+                        st.session_state.fila_pausada = False
+                        st.session_state.fila_indice = 0
+                        st.session_state.fila_enviados_sucesso = 0
+                        st.session_state.fila_horario_inicio = datetime.datetime.now(FUSO_BR).strftime("%H:%M:%S")
+                        st.session_state.fila_timestamp_inicio_total = time.time()
+                        st.session_state.fila_historico = []
+                        st.rerun()
+
+                # 📊 SE A FILA JÁ COMEÇOU A SER PROCESSADA
+                if st.session_state.fila_ativa or st.session_state.fila_indice > 0:
+                    
+                    # 📈 Renderização Fixa do Painel de Métricas Macros
+                    card_metricas = st.columns(4)
+                    with card_metricas[0]: 
+                        st.metric("Início dos Disparos", st.session_state.fila_horario_inicio)
+                    with card_metricas[1]: 
+                        st.metric("Progresso de Envio", f"{st.session_state.fila_indice} de {total_leads}")
+                    with card_metricas[2]: 
+                        st.metric("Enviados com Sucesso", str(st.session_state.fila_enviados_sucesso))
+                    with card_metricas[3]: 
+                        if st.session_state.fila_indice > 0:
+                            tempo_decorrido = time.time() - st.session_state.fila_timestamp_inicio_total
+                            tempo_medio = tempo_decorrido / st.session_state.fila_indice
+                            st.metric("Tempo Médio / Disparo", f"{tempo_medio:.1f}s")
+                        else:
+                            st.metric("Tempo Médio / Disparo", "0.0s")
+
+                    # Barra de progresso visual
+                    progresso_atual = min(st.session_state.fila_indice / total_leads, 1.0)
+                    st.progress(progresso_atual)
+
+                    # 🔘 BARRA DE CONTROLE DENTRO DA EXECUÇÃO (Botões lado a lado)
+                    col_btn1, col_btn2, _ = st.columns([1.2, 1.2, 4])
+                    
+                    if st.session_state.fila_ativa:
+                        if not st.session_state.fila_pausada:
+                            if col_btn1.button("⏸️ Pausar Fila de Envios", use_container_width=True):
+                                st.session_state.fila_pausada = True
+                                st.toast("⏸️ Fila pausada! Concluindo o processo atual...")
+                                st.rerun()
+                        else:
+                            if col_btn1.button("▶️ Retomar Fila de Envios", use_container_width=True):
+                                st.session_state.fila_pausada = False
+                                st.toast("▶️ Retomando disparos...")
+                                st.rerun()
+
+                        if col_btn2.button("⏹️ Cancelar Toda a Fila", type="secondary", use_container_width=True):
+                            st.session_state.fila_ativa = False
+                            st.session_state.fila_pausada = False
+                            st.session_state.fila_indice = 0
+                            st.toast("⏹️ Fila cancelada pelo usuário!")
+                            st.rerun()
+                    else:
+                        st.success(f"🎉 Fila concluída! Total enviados com sucesso: {st.session_state.fila_enviados_sucesso}")
+                        if st.button("🔄 Preparar Nova Planilha / Fila"):
+                            st.session_state.fila_indice = 0
+                            st.session_state.fila_ativa = False
+                            st.session_state.fila_pausada = False
+                            st.session_state.fila_historico = []
+                            st.rerun()
+
+                    # Espaço de mensagens de status em tempo real
+                    status_disparo = st.empty()
+
+                    # Histórico Linha a Linha Renderizado abaixo dos botões
+                    st.markdown("### 📋 Acompanhamento Detalhado (Linha a Linha)")
+                    st.dataframe(pd.DataFrame(st.session_state.fila_historico), use_container_width=True)
+
+                    # ⚡ MOTOR DE EXECUÇÃO DO PASSO ATUAL (Executa se estiver ATIVA e NÃO PAUSADA)
+                    if st.session_state.fila_ativa and not st.session_state.fila_pausada:
+                        idx = st.session_state.fila_indice
                         
-                        telefone = "".join(filter(str.isdigit, str(item["Telefone"])))
-                        if not telefone.startswith("55") and len(telefone) >= 10:
-                            telefone = f"55{telefone}"
+                        if idx < total_leads:
+                            item = dados_revisao[idx]
+                            lead_orig = item["_original"]
+                            blocos_msg = item["_blocos"]
+                            msg_texto = item["Mensagem que será Enviada"]
                             
-                        status_disparo.info(f"⏳ Enviando via API para {item['Nome']}...")
-                        
-                        url_envio = f"{EVOLUTION_API_URL}/message/sendText/{INSTANCE_NAME}"
-                        headers_envio = {"Content-Type": "application/json", "apikey": EVOLUTION_API_KEY}
-                        payload_envio = {"number": telefone, "text": msg_texto, "delay": 1200, "linkPreview": False}
-                        
-                        status_atual_linha = "Erro"
-                        try:
-                            response_api = requests.post(url_envio, json=payload_envio, headers=headers_envio, timeout=15)
-                            if response_api.status_code in [200, 201, 202]:
-                                enviados_sucesso += 1
-                                status_atual_linha = "Sucesso"
-                                try:
-                                    dados_resposta = response_api.json()
-                                    wpp_message_id = dados_resposta.get("key", {}).get("id") or dados_resposta.get("response", {}).get("key", {}).get("id", f"msg_{int(time.time())}")
-                                except Exception:
-                                    wpp_message_id = f"msg_{int(time.time())}_{item['CPF']}"
+                            telefone = "".join(filter(str.isdigit, str(item["Telefone"])))
+                            if not telefone.startswith("55") and len(telefone) >= 10:
+                                telefone = f"55{telefone}"
                                 
-                                dados_para_salvar = {
-                                    "cpf": item["CPF"], "nome": item["Nome"],
-                                    "fonte": lead_orig.get("fonte", "Não informada"),
-                                    "criado_em_origem": lead_orig.get("criado", ""), "telefone": telefone,
-                                    "mensagem_enviada": msg_texto, "wpp_message_id": wpp_message_id,
-                                    "horario_disparo": time.strftime("%Y-%m-%d %H:%M:%S"),
-                                    "timestamp_disparo": time.time(), "template_blocos": blocos_msg, 
-                                    "status_envio": "ENTREGUE", "houve_retorno": False
-                                }
-                                st.session_state.firebase.salvar_lead_disparado(dados_para_salvar, blocos_msg)
-                                st.toast(f"✅ Enviado para {item['Nome']}!")
+                            status_disparo.info(f"⏳ Enviando via API para {item['Nome']} (Contato {idx+1}/{total_leads})...")
+                            
+                            url_envio = f"{EVOLUTION_API_URL}/message/sendText/{INSTANCE_NAME}"
+                            headers_envio = {"Content-Type": "application/json", "apikey": EVOLUTION_API_KEY}
+                            payload_envio = {"number": telefone, "text": msg_texto, "delay": 1200, "linkPreview": False}
+                            
+                            status_atual_linha = "Erro"
+                            try:
+                                response_api = requests.post(url_envio, json=payload_envio, headers=headers_envio, timeout=15)
+                                if response_api.status_code in [200, 201, 202]:
+                                    st.session_state.fila_enviados_sucesso += 1
+                                    status_atual_linha = "Sucesso"
+                                    try:
+                                        dados_resposta = response_api.json()
+                                        wpp_message_id = dados_resposta.get("key", {}).get("id") or dados_resposta.get("response", {}).get("key", {}).get("id", f"msg_{int(time.time())}")
+                                    except Exception:
+                                        wpp_message_id = f"msg_{int(time.time())}_{item['CPF']}"
+                                    
+                                    dados_para_salvar = {
+                                        "cpf": item["CPF"], "nome": item["Nome"],
+                                        "fonte": lead_orig.get("fonte", "Não informada"),
+                                        "criado_em_origem": lead_orig.get("criado", ""), "telefone": telefone,
+                                        "mensagem_enviada": msg_texto, "wpp_message_id": wpp_message_id,
+                                        "horario_disparo": time.strftime("%Y-%m-%d %H:%M:%S"),
+                                        "timestamp_disparo": time.time(), "template_blocos": blocos_msg, 
+                                        "status_envio": "ENTREGUE", "houve_retorno": False
+                                    }
+                                    st.session_state.firebase.salvar_lead_disparado(dados_para_salvar, blocos_msg)
+                                    st.toast(f"✅ Enviado para {item['Nome']}!")
+                                else:
+                                    st.error(f"❌ Erro na API para {item['Nome']}: Code {response_api.status_code}")
+                            except Exception as err:
+                                st.error(f"❌ Falha de rede para {item['Nome']}: {err}")
+                            
+                            # Registra no histórico em memória
+                            st.session_state.fila_historico.append({
+                                "Nome": item["Nome"], "Telefone": item["Telefone"],
+                                "Mensagem": msg_texto, "Hora do Disparo": time.strftime("%H:%M:%S"),
+                                "Status": status_atual_linha
+                            })
+                            
+                            # Avança o ponteiro da lista
+                            st.session_state.fila_indice += 1
+                            
+                            # Se era o último lead, finaliza a fila por aqui
+                            if st.session_state.fila_indice >= total_leads:
+                                st.session_state.fila_ativa = False
+                                st.rerun()
                             else:
-                                st.error(f"❌ Erro na API para {item['Nome']}: Code {response_api.status_code}")
-                        except Exception as err:
-                            st.error(f"❌ Falha de rede para {item['Nome']}: {err}")
-                        
-                        historico_envios_locais.append({
-                            "Nome": item["Nome"], "Telefone": item["Telefone"],
-                            "Mensagem": msg_texto, "Hora do Disparo": time.strftime("%H:%M:%S"),
-                            "Status": status_atual_linha
-                        })
-                        placeholder_tabela_viva.dataframe(pd.DataFrame(historico_envios_locais), use_container_width=True)
-                        
-                        tempo_decorrido_total = time.time() - timestamp_inicio_total
-                        tempo_medio_atual = tempo_decorrido_total / (index + 1)
-                        
-                        barra_progresso.progress((index + 1) / total_leads)
-                        metrica_progresso.metric("Progresso de Envio", f"{index + 1} de {total_leads}")
-                        metrica_sucesso.metric("Enviados com Sucesso", str(enviados_sucesso))
-                        metrica_tempo_medio.metric("Tempo Médio / Disparo", f"{tempo_medio_atual:.1f}s")
-                        
-                        if index < total_leads - 1:
-                            tempo_espera = random.randint(5, 50)
-                            for segundo in range(tempo_espera, 0, -1):
-                                status_disparo.warning(f"🛡️ Antiban: Aguardando {segundo} segundos...")
-                                time.sleep(1)
+                                # Se ainda restam leads, roda o cronômetro Antiban
+                                tempo_espera = random.randint(5, 50)
+                                for segundo in range(tempo_espera, 0, -1):
+                                    status_disparo.warning(f"🛡️ Antiban: Aguardando {segundo} segundos para o próximo disparo...")
+                                    time.sleep(1)
+                                st.rerun()
                                 
-                    status_disparo.success(f"🎉 Fila concluída via API! Total enviados com sucesso: {enviados_sucesso}")
+                    elif st.session_state.fila_pausada:
+                        status_disparo.warning("⏸️ A fila de disparos está pausada. Os contatos restantes estão preservados.")
 
 
     # =========================================================================
