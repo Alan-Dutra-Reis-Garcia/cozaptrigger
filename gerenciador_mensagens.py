@@ -124,7 +124,15 @@ class GerenciadorMensagens:
         primeiro_nome = nome_cliente.split()[0].strip().capitalize()
         
         # 🚀 MONTAGEM FINAL: Os emojis entram na mensagem que vai pro cliente...
-        mensagem_final = f"{saudacao} {primeiro_nome}! {emoji_nome}\n{introducao}\n{oferta} {emoji_contexto}\n{cta}\n{conclusao}"
+        mensagem_final = (
+            f"{saudacao} {primeiro_nome}! {emoji_nome}\n"
+            f"{introducao}\n"
+            f"{oferta} {emoji_contexto}\n"
+            f"{cta}\n"
+            f"{conclusao}\n\n"
+            f"----------------------------------------\n"
+            f"_Para não receber mensagens sobre esta oferta, envie SAIR._"
+        )
         
         # 📝 DICIONÁRIO LIMPO: Mantemos apenas o texto para o Firebase, sem poluir com emojis
         detalhes_blocos = {
