@@ -2,6 +2,10 @@ import random
 
 class GerenciadorMensagens:
     def __init__(self):
+        # 🎭 LISTAS DE EMOJIS RANDÔMICOS (Aumenta drasticamente a variação do Antiban)
+        self.emojis_atendimento = ["😊", "👋", "✨", "🤝", "🤩", "🙌", "☺"]
+        self.emojis_financeiros = ["💰", "🚀", "🎯", "💵", "📈", "⚡", "💎"]
+
         # Armazenamos os blocos de Spintax separados por Fonte
         self.blocos_fontes = {
             "Quitados": {
@@ -72,20 +76,24 @@ class GerenciadorMensagens:
             
         blocos = self.blocos_fontes[fonte_cliente]
         
-        # Sorteia um elemento de cada lista
+        # Sorteia um elemento de cada lista de texto
         saudacao = random.choice(blocos["saudacoes"])
         introducao = random.choice(blocos["introducoes"])
         oferta = random.choice(blocos["ofertas"])
         cta = random.choice(blocos["ctas"])
         conclusao = random.choice(blocos["conclusoes"])
         
+        # ✨ NOVIDADE: Sorteia um emoji dinâmico para cada momento da mensagem
+        emoji_nome = random.choice(self.emojis_atendimento)
+        emoji_contexto = random.choice(self.emojis_financeiros)
+        
         # Trata o primeiro nome do cliente
         primeiro_nome = nome_cliente.split()[0].strip().capitalize()
         
-        # Monta a estrutura final
-        mensagem_final = f"{saudacao} {primeiro_nome}! 😊\n{introducao}\n{oferta}\n{cta}\n{conclusao}"
+        # 🚀 MONTAGEM FINAL: Os emojis entram na mensagem que vai pro cliente...
+        mensagem_final = f"{saudacao} {primeiro_nome}! {emoji_nome}\n{introducao}\n{oferta} {emoji_contexto}\n{cta}\n{conclusao}"
         
-        # Dicionário de detalhes para enviarmos para o Firebase acompanhar a performance de cada bloco
+        # 📝 DICIONÁRIO LIMPO: Mantemos apenas o texto para o Firebase, sem poluir com emojis
         detalhes_blocos = {
             "saudacao_texto": saudacao,
             "introducao_texto": introducao,
