@@ -129,9 +129,8 @@ class GerenciadorMensagens:
             f"{introducao}\n"
             f"{oferta} {emoji_contexto}\n"
             f"{cta}\n"
-            f"{conclusao}\n\n"
-            f"----------------------------------------\n"
-            f"_Para não receber mensagens sobre esta oferta, envie SAIR._"
+            f"{conclusao}\n\n\n"
+            f"> _Para não receber mensagens sobre esta oferta, envie SAIR._"
         )
         
         # 📝 DICIONÁRIO LIMPO: Mantemos apenas o texto para o Firebase, sem poluir com emojis
