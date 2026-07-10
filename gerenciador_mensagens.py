@@ -3,8 +3,8 @@ import random
 class GerenciadorMensagens:
     def __init__(self):
         # 🎭 LISTAS DE EMOJIS RANDÔMICOS (Aumenta drasticamente a variação do Antiban)
-        self.emojis_atendimento = ["😊", "👋", "✨", "🤝", "🤩", "🙌", "☺"]
-        self.emojis_financeiros = ["💰", "🚀", "🎯", "💵", "📈", "⚡", "💎"]
+        self.emojis_atendimento = ["😊", "👋", "✨", "🤝", "🤩"]
+        self.emojis_financeiros = ["💰", "💎"]
 
         # Armazenamos os blocos de Spintax separados por Fonte
         self.blocos_fontes = {
