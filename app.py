@@ -587,9 +587,14 @@ else:
             df_campanhas["data_criacao"] = pd.to_datetime(df_campanhas["data_criacao"]).dt.tz_convert("America/Sao_Paulo").dt.strftime("%d/%m/%Y %H:%M:%S")
             
             st.subheader("📋 Planilhas e Lotes Processados")
-            df_exibicao = df_campanhas.copy()
-            df_exibicao.columns = ["ID da Campanha", "Nome do Arquivo / Origem", "Data do Upload", "Registros Carregados", "Enviados com Sucesso", "Operador"]
-            st.dataframe(df_exibicao, use_container_width=True, hide_index=True)
+            
+            # ✨ O SEGREDO: Força o Pandas a organizar os dados nas colunas certas ANTES de renomear
+            df_ordenado = df_campanhas[["id_campanha", "nome_arquivo", "data_criacao", "quantidade_registros", "quantidade_sucesso", "vendedor"]]
+            
+            # Agora sim, renomeamos sabendo exatamente quem é quem
+            df_ordenado.columns = ["ID da Campanha", "Nome do Arquivo / Origem", "Data do Upload", "Registros Carregados", "Enviados com Sucesso", "Operador"]
+            
+            st.dataframe(df_ordenado, use_container_width=True, hide_index=True)
             
             st.markdown("---")
             st.subheader("📥 Exportação Detalhada por Campanha")
