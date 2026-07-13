@@ -1,6 +1,7 @@
 import firebase_admin
 from firebase_admin import credentials, firestore
 import os
+import datetime
 
 class FirebaseManager:
     def __init__(self):
@@ -92,3 +93,44 @@ class FirebaseManager:
         except Exception as e:
             print(f"❌ [Firebase Error] Erro ao salvar lead: {e}")
             return {"sucesso": False, "erro": str(e)}
+        
+        import datetime
+
+    def criar_campanha(self, id_campanha, nome_arquivo, total_registros, vendedor):
+        """
+        Inicializa o documento de controle de um novo lote/campanha no Firestore
+        """
+        try:
+            # Força o Fuso Horário de Brasília para gravação do lote
+            fuso_br = datetime.timezone(datetime.timedelta(hours=-3))
+            agora_br = datetime.datetime.now(fuso_br)
+            
+            doc_ref = self.db.collection("campanhas").document(id_campanha)
+            doc_ref.set({
+                "id_campanha": id_campanha,
+                "nome_arquivo": nome_arquivo,
+                "data_criacao": agora_br,
+                "quantidade_registros": total_registros,
+                "quantidade_sucesso": 0,
+                "vendedor": vendedor
+            })
+            print(f"📦 [Firebase] Campanha {id_campanha} inicializada com sucesso.")
+            return True
+        except Exception as e:
+            print(f"❌ Erro ao criar campanha no Firebase: {e}")
+            return False
+
+    def atualizar_sucesso_campanha(self, id_campanha, quantidade_sucesso):
+        """
+        Atualiza o contador definitivo de envios com sucesso daquela campanha
+        """
+        try:
+            doc_ref = self.db.collection("campanhas").document(id_campanha)
+            doc_ref.update({
+                "quantidade_sucesso": quantidade_sucesso
+            })
+            print(f"📦 [Firebase] Campanha {id_campanha} atualizada com {quantidade_sucesso} sucessos.")
+            return True
+        except Exception as e:
+            print(f"❌ Erro ao atualizar sucesso da campanha no Firebase: {e}")
+            return False
