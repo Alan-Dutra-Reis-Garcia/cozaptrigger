@@ -346,44 +346,68 @@ else:
                             if not telefone.startswith("55") and len(telefone) >= 10:
                                 telefone = f"55{telefone}"
                                 
-                            status_disparo.info(f"⏳ Enviando via API para {item['Nome']} (Contato {idx+1}/{total_leads})...")
+                            status_disparo.info(f"⏳ Processando {item['Nome']} (Contato {idx+1}/{total_leads})...")
                             
                             url_envio = f"{EVOLUTION_API_URL}/message/sendText/{INSTANCE_NAME}"
                             headers_envio = {"Content-Type": "application/json", "apikey": EVOLUTION_API_KEY}
                             payload_envio = {"number": telefone, "text": msg_texto, "delay": 1200, "linkPreview": False}
                             
                             status_atual_linha = "Erro"
-                            try:
-                                response_api = requests.post(url_envio, json=payload_envio, headers=headers_envio, timeout=15)
-                                if response_api.status_code in [200, 201, 202]:
-                                    st.session_state.fila_enviados_sucesso += 1
-                                    status_atual_linha = "Sucesso"
-                                    try:
-                                        dados_resposta = response_api.json()
-                                        wpp_message_id = dados_resposta.get("key", {}).get("id") or dados_resposta.get("response", {}).get("key", {}).get("id", f"msg_{int(time.time())}")
-                                    except Exception:
-                                        wpp_message_id = f"msg_{int(time.time())}_{item['CPF']}"
-                                    
-                                    dados_para_salvar = {
-                                        "cpf": item["CPF"], "nome": item["Nome"],
-                                        "fonte": lead_orig.get("fonte", "Não informada"),
-                                        "criado_em_origem": lead_orig.get("criado", ""), "telefone": telefone,
-                                        "mensagem_enviada": msg_texto, "wpp_message_id": wpp_message_id,
-                                        "horario_disparo": time.strftime("%Y-%m-%d %H:%M:%S"),
-                                        "timestamp_disparo": time.time(), "template_blocos": blocos_msg, 
-                                        "status_envio": "ENTREGUE", "houve_retorno": False
-                                    }
-                                    st.session_state.firebase.salvar_lead_disparado(dados_para_salvar, blocos_msg)
-                                    st.toast(f"✅ Enviado para {item['Nome']}!")
-                                else:
-                                    st.error(f"❌ Erro na API para {item['Nome']}: Code {response_api.status_code}")
-                            except Exception as err:
-                                st.error(f"❌ Falha de rede para {item['Nome']}: {err}")
                             
-                            # Registra no histórico em memória
+                            # 🛡️ 1. TRAVA DE FREQUÊNCIA (JANELA DE 5 DIAS)
+                            cpf_atual = str(item["CPF"]).strip()
+                            limite_5_dias = time.time() - (5 * 24 * 60 * 60)
+                            ja_enviado_recente = False
+                            
+                            try:
+                                # Consulta o banco em tempo real antes de disparar a API
+                                query_5_dias = st.session_state.firebase.db.collection("historico_disparos")\
+                                    .where("cpf", "==", cpf_atual)\
+                                    .where("timestamp_disparo", ">=", limite_5_dias)\
+                                    .limit(1).stream()
+                                
+                                if any(query_5_dias):
+                                    ja_enviado_recente = True
+                            except Exception as e:
+                                st.warning(f"⚠️ Erro ao validar frequência do CPF {cpf_atual}: {e}")
+
+                            # Se já enviamos nos últimos 5 dias, pula o envio físico
+                            if ja_enviado_recente:
+                                status_atual_linha = "Pulado (Frequência)"
+                                st.toast(f"⏭️ CPF {cpf_atual} já recebeu disparo nos últimos 5 dias. Pulando!")
+                            else:
+                                # 2. EXECUÇÃO NORMAL DO DISPARO SE PASSOU NA TRAVA
+                                try:
+                                    response_api = requests.post(url_envio, json=payload_envio, headers=headers_envio, timeout=15)
+                                    if response_api.status_code in [200, 201, 202]:
+                                        st.session_state.fila_enviados_sucesso += 1
+                                        status_atual_linha = "Sucesso"
+                                        try:
+                                            dados_resposta = response_api.json()
+                                            wpp_message_id = dados_resposta.get("key", {}).get("id") or dados_resposta.get("response", {}).get("key", {}).get("id", f"msg_{int(time.time())}")
+                                        except Exception:
+                                            wpp_message_id = f"msg_{int(time.time())}_{item['CPF']}"
+                                        
+                                        dados_para_salvar = {
+                                            "cpf": item["CPF"], "nome": item["Nome"],
+                                            "fonte": lead_orig.get("fonte", "Não informada"),
+                                            "criado_em_origem": lead_orig.get("criado", ""), "telefone": telefone,
+                                            "mensagem_enviada": msg_texto, "wpp_message_id": wpp_message_id,
+                                            "horario_disparo": datetime.datetime.now(FUSO_BR).strftime("%Y-%m-%d %H:%M:%S"),
+                                            "timestamp_disparo": time.time(), "template_blocos": blocos_msg, 
+                                            "status_envio": "ENTREGUE", "houve_retorno": False
+                                        }
+                                        st.session_state.firebase.salvar_lead_disparado(dados_para_salvar, blocos_msg)
+                                        st.toast(f"✅ Enviado para {item['Nome']}!")
+                                    else:
+                                        st.error(f"❌ Erro na API para {item['Nome']}: Code {response_api.status_code}")
+                                except Exception as err:
+                                    st.error(f"❌ Falha de rede para {item['Nome']}: {err}")
+                            
+                            # Registra no histórico em memória da tela atual
                             st.session_state.fila_historico.append({
                                 "Nome": item["Nome"], "Telefone": item["Telefone"],
-                                "Mensagem": msg_texto, "Hora do Disparo": time.strftime("%H:%M:%S"),
+                                "Mensagem": msg_texto, "Hora do Disparo": datetime.datetime.now(FUSO_BR).strftime("%H:%M:%S"),
                                 "Status": status_atual_linha
                             })
                             
@@ -395,11 +419,13 @@ else:
                                 st.session_state.fila_ativa = False
                                 st.rerun()
                             else:
-                                # Se ainda restam leads, roda o cronômetro Antiban
-                                tempo_espera = random.randint(5, 50)
-                                for segundo in range(tempo_espera, 0, -1):
-                                    status_disparo.warning(f"🛡️ Antiban: Aguardando {segundo} segundos para o próximo disparo...")
-                                    time.sleep(1)
+                                # ⚡ 3. BYPASS INTELIGENTE DO CRONÔMETRO
+                                # O Antiban só "dorme" se o disparo foi de fato um Sucesso
+                                if status_atual_linha == "Sucesso":
+                                    tempo_espera = random.randint(5, 50)
+                                    for segundo in range(tempo_espera, 0, -1):
+                                        status_disparo.warning(f"🛡️ Antiban: Aguardando {segundo} segundos para o próximo disparo...")
+                                        time.sleep(1)
                                 st.rerun()
                                 
                     elif st.session_state.fila_pausada:
