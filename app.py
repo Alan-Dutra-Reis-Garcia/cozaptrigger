@@ -136,7 +136,7 @@ else:
     st.sidebar.markdown(f"👤 **Vendedor:**\n{st.session_state.usuario_nome}")
     st.sidebar.markdown("---")
     
-    # 🗺️ SEPARADOR DE AMBIENTES ATUALIZADO (Fase 2 inclusa)
+    # 🗺️ SEPARADOR DE AMBIENTES
     menu_navegacao = st.sidebar.radio(
         "Navegue pelo Sistema:",
         ["🚀 Fila de Disparos", "📊 Painel de Indicadores", "📦 Registro de Campanhas"]
@@ -170,7 +170,7 @@ else:
 
 
     # =========================================================================
-    # MUNDO 1: FILA DE DISPAROS (COM CONTROLE DE LOTES E ANTE-REENVIO)
+    # MUNDO 1: FILA DE DISPAROS (VERSÃO ULTRA-CORRIGIDA COM TRAVA DE 5 DIAS)
     # =========================================================================
     if menu_navegacao == "🚀 Fila de Disparos":
         st.title("🚀 Painel de Disparos - CoZapTrigger")
@@ -264,11 +264,10 @@ else:
                 # 🎛️ BOTÃO DE START INICIAL
                 if not st.session_state.fila_ativa and st.session_state.fila_indice == 0:
                     if st.button("Iniciar Fila de Disparos Seguro (Via API)", type="primary"):
-                        # Gerador Automático do ID de Lote da Campanha
                         id_lote = f"lote_{datetime.datetime.now(FUSO_BR).strftime('%Y%m%d_%H%M%S')}"
                         st.session_state.fila_id_campanha = id_lote
                         
-                        # Grava o Lote no Firebase antes de começar
+                        # Grava o Lote-Mãe no banco
                         st.session_state.firebase.criar_campanha(
                             id_campanha=id_lote,
                             nome_arquivo=st.session_state.nome_arquivo_lote,
@@ -302,7 +301,6 @@ else:
                     progresso_atual = min(st.session_state.fila_indice / total_leads, 1.0)
                     st.progress(progresso_atual)
 
-                    # 🔘 BARRA DE CONTROLE DENTRO DA EXECUÇÃO
                     col_btn1, col_btn2, _ = st.columns([1.2, 1.2, 4])
                     
                     if st.session_state.fila_ativa:
@@ -318,7 +316,6 @@ else:
                                 st.rerun()
 
                         if col_btn2.button("⏹️ Cancelar Toda a Fila", type="secondary", use_container_width=True):
-                            # Atualiza o encerramento forçado do lote no banco
                             st.session_state.firebase.atualizar_sucesso_campanha(
                                 st.session_state.fila_id_campanha, 
                                 st.session_state.fila_enviados_sucesso
@@ -341,7 +338,7 @@ else:
                     st.markdown("### 📋 Acompanhamento Detalhado (Linha a Linha)")
                     st.dataframe(pd.DataFrame(st.session_state.fila_historico), use_container_width=True)
 
-                    # ⚡ MOTOR DE EXECUÇÃO DO PASSO ATUAL
+                    # ⚡ MOTOR DE EXECUÇÃO ATUALIZADO COM AS TRAVAS ATIVAS
                     if st.session_state.fila_ativa and not st.session_state.fila_pausada:
                         idx = st.session_state.fila_indice
                         
@@ -363,7 +360,7 @@ else:
                             
                             status_atual_linha = "Erro"
                             
-                            # 🛡️ TRAVA ANTICRASH / REENVIO (5 DIAS)
+                            # 🛡️ 1. TRAVA DE FREQUÊNCIA DE 5 DIAS (USANDO O NOVO ÍNDICE COMPOSTO)
                             cpf_atual = str(item["CPF"]).strip()
                             limite_5_dias = time.time() - (5 * 24 * 60 * 60)
                             ja_enviado_recente = False
@@ -378,9 +375,10 @@ else:
                             except Exception as e:
                                 st.warning(f"⚠️ Erro ao checar frequência do CPF {cpf_atual}: {e}")
 
+                            # 2. SE PASSOU NA TRAVA, TENTA DISPARAR NA API
                             if ja_enviado_recente:
                                 status_atual_linha = "Pulado (Frequência)"
-                                st.toast(f"箱 CPF {cpf_atual} já recebeu disparo nos últimos 5 dias. Ignorado!")
+                                st.toast(f"⏭️ CPF {cpf_atual} já recebeu disparo nos últimos 5 dias. Ignorado!")
                             else:
                                 try:
                                     response_api = requests.post(url_envio, json=payload_envio, headers=headers_envio, timeout=15)
@@ -393,9 +391,10 @@ else:
                                         except Exception:
                                             wpp_message_id = f"msg_{int(time.time())}_{item['CPF']}"
                                         
+                                        # ✨ IMPORTANTE: Aqui salvamos o lead amarrado ao id_campanha do lote!
                                         dados_para_salvar = {
                                             "cpf": item["CPF"], "nome": item["Nome"],
-                                            "id_campanha": st.session_state.fila_id_campanha,  # Tag de Loteamento
+                                            "id_campanha": st.session_state.fila_id_campanha,
                                             "fonte": lead_orig.get("fonte", "Não informada"),
                                             "criado_em_origem": lead_orig.get("criado", ""), "telefone": telefone,
                                             "mensagem_enviada": msg_texto, "wpp_message_id": wpp_message_id,
@@ -419,7 +418,6 @@ else:
                             st.session_state.fila_indice += 1
                             
                             if st.session_state.fila_indice >= total_leads:
-                                # Finaliza o Lote com sucesso total no banco
                                 st.session_state.firebase.atualizar_sucesso_campanha(
                                     st.session_state.fila_id_campanha, 
                                     st.session_state.fila_enviados_sucesso
@@ -427,7 +425,7 @@ else:
                                 st.session_state.fila_ativa = False
                                 st.rerun()
                             else:
-                                # ⚡ BYPASS DO ANTIBAN: Só dorme se o envio deu Sucesso
+                                # ⚡ 3. BYPASS DO ANTIBAN: Só dorme de fato se deu Sucesso comercial
                                 if status_atual_linha == "Sucesso":
                                     tempo_espera = random.randint(5, 50)
                                     for segundo in range(tempo_espera, 0, -1):
@@ -564,7 +562,7 @@ else:
 
 
     # =========================================================================
-    # MUNDO 3: REGISTRO DE CAMPANHAS E EXPORTAÇÃO EXCEL (NOVO!)
+    # MUNDO 3: REGISTRO DE CAMPANHAS E EXPORTAÇÃO EXCEL
     # =========================================================================
     elif menu_navegacao == "📦 Registro de Campanhas":
         st.title("📦 Auditoria e Registro de Campanhas")
@@ -583,15 +581,12 @@ else:
         if df_campanhas.empty:
             st.info("Nenhuma campanha ou lote foi registrado no sistema até o momento.")
         else:
-            # Organiza a exibição da tabela macro de lotes
             df_campanhas["data_criacao"] = pd.to_datetime(df_campanhas["data_criacao"]).dt.tz_convert("America/Sao_Paulo").dt.strftime("%d/%m/%Y %H:%M:%S")
             
             st.subheader("📋 Planilhas e Lotes Processados")
             
-            # ✨ O SEGREDO: Força o Pandas a organizar os dados nas colunas certas ANTES de renomear
+            # ✨ ALINHAMENTO DA TABELA COM AS COLUNAS AMARRADAS EXPLICITAMENTE
             df_ordenado = df_campanhas[["id_campanha", "nome_arquivo", "data_criacao", "quantidade_registros", "quantidade_sucesso", "vendedor"]]
-            
-            # Agora sim, renomeamos sabendo exatamente quem é quem
             df_ordenado.columns = ["ID da Campanha", "Nome do Arquivo / Origem", "Data do Upload", "Registros Carregados", "Enviados com Sucesso", "Operador"]
             
             st.dataframe(df_ordenado, use_container_width=True, hide_index=True)
@@ -599,14 +594,12 @@ else:
             st.markdown("---")
             st.subheader("📥 Exportação Detalhada por Campanha")
             
-            # Caixa de seleção para o gestor escolher qual lote auditar
             lista_ids_campanhas = list(df_campanhas["id_campanha"].unique())
             campanha_selecionada = st.selectbox("Escolha uma campanha para analisar e baixar o Excel:", lista_ids_campanhas)
             
             if campanha_selecionada:
                 with st.spinner(f"Processando relatório detalhado do lote {campanha_selecionada}..."):
                     try:
-                        # Busca os leads individuais que pertencem ao lote selecionado
                         leads_lote_ref = st.session_state.firebase.db.collection("historico_disparos").where("id_campanha", "==", campanha_selecionada).stream()
                         dados_detalhes = []
                         for doc in leads_lote_ref:
@@ -633,7 +626,6 @@ else:
                     st.markdown(f"📊 **Visualização prévia do lote:** {len(df_detalhes)} registros localizados.")
                     st.dataframe(df_detalhes, use_container_width=True, hide_index=True)
                     
-                    # 🚀 ENGINE DE EXPORTAÇÃO EXCEL EM MEMÓRIA (Via BytesIO)
                     buffer_excel = io.BytesIO()
                     with pd.ExcelWriter(buffer_excel, engine="openpyxl") as writer:
                         df_detalhes.to_excel(writer, index=False, sheet_name="Resultados Disparos")
