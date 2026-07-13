@@ -4,7 +4,6 @@ import time
 import random
 import requests
 import datetime
-import io  # Necessário para a exportação de arquivos Excel na memória
 from firebase_manager import FirebaseManager
 from gerenciador_mensagens import GerenciadorMensagens
 
@@ -77,6 +76,7 @@ def calcular_metricas_completas(df_alvo):
     """Calcula a tabela comparativa de métricas baseada em qualquer agrupamento de DataFrame"""
     resumos = []
     
+    # O loop funciona perfeitamente percorrendo o objeto GroupBy
     for grupo, sub_df in df_alvo:
         if sub_df.empty:
             continue
@@ -107,6 +107,7 @@ def calcular_metricas_completas(df_alvo):
             "T. Médio Retorno": f"{int(t_medio)}s" if t_medio > 0 else "0s"
         })
         
+    # Se nenhuma linha foi agrupada, retorna um DataFrame vazio com segurança
     if not resumos:
         return pd.DataFrame()
         
@@ -133,13 +134,14 @@ if not st.session_state.logado:
 
 # --- 🚀 AMBIENTE INTERNO LOGADO ---
 else:
+    # Menu Lateral Principal de Navegação
     st.sidebar.markdown(f"👤 **Vendedor:**\n{st.session_state.usuario_nome}")
     st.sidebar.markdown("---")
     
-    # 🗺️ SEPARADOR DE AMBIENTES
+    # 🗺️ SEPARADOR DE AMBIENTES (DISPAROS VS INDICADORES)
     menu_navegacao = st.sidebar.radio(
         "Navegue pelo Sistema:",
-        ["🚀 Fila de Disparos", "📊 Painel de Indicadores", "📦 Registro de Campanhas"]
+        ["🚀 Fila de Disparos", "📊 Painel de Indicadores"]
     )
     
     st.sidebar.markdown("---")
@@ -170,12 +172,13 @@ else:
 
 
     # =========================================================================
-    # MUNDO 1: FILA DE DISPAROS (VERSÃO ULTRA-CORRIGIDA COM TRAVA DE 5 DIAS)
+    # MUNDO 1: FILA DE DISPAROS (COM PAUSA E CANCELAMENTO)
     # =========================================================================
     if menu_navegacao == "🚀 Fila de Disparos":
         st.title("🚀 Painel de Disparos - CoZapTrigger")
         st.markdown("---")
 
+        # 🧠 INICIALIZAÇÃO DOS ESTADOS DE CONTROLE DA FILA
         if "fila_ativa" not in st.session_state: st.session_state.fila_ativa = False
         if "fila_pausada" not in st.session_state: st.session_state.fila_pausada = False
         if "fila_indice" not in st.session_state: st.session_state.fila_indice = 0
@@ -183,8 +186,6 @@ else:
         if "fila_horario_inicio" not in st.session_state: st.session_state.fila_horario_inicio = ""
         if "fila_timestamp_inicio_total" not in st.session_state: st.session_state.fila_timestamp_inicio_total = 0.0
         if "fila_historico" not in st.session_state: st.session_state.fila_historico = []
-        if "nome_arquivo_lote" not in st.session_state: st.session_state.nome_arquivo_lote = "Texto Copiado e Colado"
-        if "fila_id_campanha" not in st.session_state: st.session_state.fila_id_campanha = ""
 
         aba_upload, aba_colar = st.tabs(["📁 Subir Planilha (CSV/Excel)", "✍️ Copiar e Colar (Ctrl+V)"])
         lista_leads_brutos = []
@@ -203,7 +204,6 @@ else:
                     colunas_obrigatorias = ['cpf', 'nome', 'fonte', 'criado', 'telefone']
                     
                     if all(col in df_upload.columns for col in colunas_obrigatorias):
-                        st.session_state.nome_arquivo_lote = arquivo_carregado.name
                         for _, row in df_upload.iterrows():
                             if pd.notna(row['telefone']) and str(row['telefone']).strip() != "":
                                 lista_leads_brutos.append({
@@ -223,7 +223,6 @@ else:
             st.subheader("Colar dados dos clientes")
             texto_colado = st.text_area("Cole as linhas aqui (CPF;Nome;Fonte;Criado;Telefone):", height=150)
             if texto_colado.strip():
-                st.session_state.nome_arquivo_lote = "Texto Copiado e Colado (Ctrl+V)"
                 linhas_texto = texto_colado.strip().split('\n')
                 for linha in linhas_texto:
                     partes = linha.split(';')
@@ -261,20 +260,9 @@ else:
             else:
                 total_leads = len(dados_revisao)
 
-                # 🎛️ BOTÃO DE START INICIAL
+                # 🎛️ BOTÃO DE START INICIAL (Só aparece se a fila não estiver rodando e estiver no começo)
                 if not st.session_state.fila_ativa and st.session_state.fila_indice == 0:
                     if st.button("Iniciar Fila de Disparos Seguro (Via API)", type="primary"):
-                        id_lote = f"lote_{datetime.datetime.now(FUSO_BR).strftime('%Y%m%d_%H%M%S')}"
-                        st.session_state.fila_id_campanha = id_lote
-                        
-                        # Grava o Lote-Mãe no banco
-                        st.session_state.firebase.criar_campanha(
-                            id_campanha=id_lote,
-                            nome_arquivo=st.session_state.nome_arquivo_lote,
-                            total_registros=total_leads,
-                            vendedor=st.session_state.usuario_nome
-                        )
-                        
                         st.session_state.fila_ativa = True
                         st.session_state.fila_pausada = False
                         st.session_state.fila_indice = 0
@@ -286,10 +274,15 @@ else:
 
                 # 📊 SE A FILA JÁ COMEÇOU A SER PROCESSADA
                 if st.session_state.fila_ativa or st.session_state.fila_indice > 0:
+                    
+                    # 📈 Renderização Fixa do Painel de Métricas Macros
                     card_metricas = st.columns(4)
-                    with card_metricas[0]: st.metric("Início dos Disparos", st.session_state.fila_horario_inicio)
-                    with card_metricas[1]: st.metric("Progresso de Envio", f"{st.session_state.fila_indice} de {total_leads}")
-                    with card_metricas[2]: st.metric("Enviados com Sucesso", str(st.session_state.fila_enviados_sucesso))
+                    with card_metricas[0]: 
+                        st.metric("Início dos Disparos", st.session_state.fila_horario_inicio)
+                    with card_metricas[1]: 
+                        st.metric("Progresso de Envio", f"{st.session_state.fila_indice} de {total_leads}")
+                    with card_metricas[2]: 
+                        st.metric("Enviados com Sucesso", str(st.session_state.fila_enviados_sucesso))
                     with card_metricas[3]: 
                         if st.session_state.fila_indice > 0:
                             tempo_decorrido = time.time() - st.session_state.fila_timestamp_inicio_total
@@ -298,9 +291,11 @@ else:
                         else:
                             st.metric("Tempo Médio / Disparo", "0.0s")
 
+                    # Barra de progresso visual
                     progresso_atual = min(st.session_state.fila_indice / total_leads, 1.0)
                     st.progress(progresso_atual)
 
+                    # 🔘 BARRA DE CONTROLE DENTRO DA EXECUÇÃO (Botões lado a lado)
                     col_btn1, col_btn2, _ = st.columns([1.2, 1.2, 4])
                     
                     if st.session_state.fila_ativa:
@@ -316,10 +311,6 @@ else:
                                 st.rerun()
 
                         if col_btn2.button("⏹️ Cancelar Toda a Fila", type="secondary", use_container_width=True):
-                            st.session_state.firebase.atualizar_sucesso_campanha(
-                                st.session_state.fila_id_campanha, 
-                                st.session_state.fila_enviados_sucesso
-                            )
                             st.session_state.fila_ativa = False
                             st.session_state.fila_pausada = False
                             st.session_state.fila_indice = 0
@@ -334,11 +325,14 @@ else:
                             st.session_state.fila_historico = []
                             st.rerun()
 
+                    # Espaço de mensagens de status em tempo real
                     status_disparo = st.empty()
+
+                    # Histórico Linha a Linha Renderizado abaixo dos botões
                     st.markdown("### 📋 Acompanhamento Detalhado (Linha a Linha)")
                     st.dataframe(pd.DataFrame(st.session_state.fila_historico), use_container_width=True)
 
-                    # ⚡ MOTOR DE EXECUÇÃO ATUALIZADO COM AS TRAVAS ATIVAS
+                    # ⚡ MOTOR DE EXECUÇÃO DO PASSO ATUAL (Executa se estiver ATIVA e NÃO PAUSADA)
                     if st.session_state.fila_ativa and not st.session_state.fila_pausada:
                         idx = st.session_state.fila_indice
                         
@@ -360,26 +354,29 @@ else:
                             
                             status_atual_linha = "Erro"
                             
-                            # 🛡️ 1. TRAVA DE FREQUÊNCIA DE 5 DIAS (USANDO O NOVO ÍNDICE COMPOSTO)
+                            # 🛡️ 1. TRAVA DE FREQUÊNCIA (JANELA DE 5 DIAS)
                             cpf_atual = str(item["CPF"]).strip()
                             limite_5_dias = time.time() - (5 * 24 * 60 * 60)
                             ja_enviado_recente = False
                             
                             try:
+                                # Consulta o banco em tempo real antes de disparar a API
                                 query_5_dias = st.session_state.firebase.db.collection("historico_disparos")\
                                     .where("cpf", "==", cpf_atual)\
                                     .where("timestamp_disparo", ">=", limite_5_dias)\
                                     .limit(1).stream()
+                                
                                 if any(query_5_dias):
                                     ja_enviado_recente = True
                             except Exception as e:
-                                st.warning(f"⚠️ Erro ao checar frequência do CPF {cpf_atual}: {e}")
+                                st.warning(f"⚠️ Erro ao validar frequência do CPF {cpf_atual}: {e}")
 
-                            # 2. SE PASSOU NA TRAVA, TENTA DISPARAR NA API
+                            # Se já enviamos nos últimos 5 dias, pula o envio físico
                             if ja_enviado_recente:
                                 status_atual_linha = "Pulado (Frequência)"
-                                st.toast(f"⏭️ CPF {cpf_atual} já recebeu disparo nos últimos 5 dias. Ignorado!")
+                                st.toast(f"⏭️ CPF {cpf_atual} já recebeu disparo nos últimos 5 dias. Pulando!")
                             else:
+                                # 2. EXECUÇÃO NORMAL DO DISPARO SE PASSOU NA TRAVA
                                 try:
                                     response_api = requests.post(url_envio, json=payload_envio, headers=headers_envio, timeout=15)
                                     if response_api.status_code in [200, 201, 202]:
@@ -391,10 +388,8 @@ else:
                                         except Exception:
                                             wpp_message_id = f"msg_{int(time.time())}_{item['CPF']}"
                                         
-                                        # ✨ IMPORTANTE: Aqui salvamos o lead amarrado ao id_campanha do lote!
                                         dados_para_salvar = {
                                             "cpf": item["CPF"], "nome": item["Nome"],
-                                            "id_campanha": st.session_state.fila_id_campanha,
                                             "fonte": lead_orig.get("fonte", "Não informada"),
                                             "criado_em_origem": lead_orig.get("criado", ""), "telefone": telefone,
                                             "mensagem_enviada": msg_texto, "wpp_message_id": wpp_message_id,
@@ -409,27 +404,27 @@ else:
                                 except Exception as err:
                                     st.error(f"❌ Falha de rede para {item['Nome']}: {err}")
                             
+                            # Registra no histórico em memória da tela atual
                             st.session_state.fila_historico.append({
                                 "Nome": item["Nome"], "Telefone": item["Telefone"],
                                 "Mensagem": msg_texto, "Hora do Disparo": datetime.datetime.now(FUSO_BR).strftime("%H:%M:%S"),
                                 "Status": status_atual_linha
                             })
                             
+                            # Avança o ponteiro da lista
                             st.session_state.fila_indice += 1
                             
+                            # Se era o último lead, finaliza a fila por aqui
                             if st.session_state.fila_indice >= total_leads:
-                                st.session_state.firebase.atualizar_sucesso_campanha(
-                                    st.session_state.fila_id_campanha, 
-                                    st.session_state.fila_enviados_sucesso
-                                )
                                 st.session_state.fila_ativa = False
                                 st.rerun()
                             else:
-                                # ⚡ 3. BYPASS DO ANTIBAN: Só dorme de fato se deu Sucesso comercial
+                                # ⚡ 3. BYPASS INTELIGENTE DO CRONÔMETRO
+                                # O Antiban só "dorme" se o disparo foi de fato um Sucesso
                                 if status_atual_linha == "Sucesso":
                                     tempo_espera = random.randint(5, 50)
                                     for segundo in range(tempo_espera, 0, -1):
-                                        status_disparo.warning(f"🛡️ Antiban: Aguardando {segundo} segundos...")
+                                        status_disparo.warning(f"🛡️ Antiban: Aguardando {segundo} segundos para o próximo disparo...")
                                         time.sleep(1)
                                 st.rerun()
                                 
@@ -438,7 +433,7 @@ else:
 
 
     # =========================================================================
-    # MUNDO 2: PAINEL DE INDICADORES
+    # MUNDO 2: PAINEL DE INDICADORES (O NOVO LUGAR)
     # =========================================================================
     elif menu_navegacao == "📊 Painel de Indicadores":
         st.title("📊 Painel Estratégico de Indicadores")
@@ -446,6 +441,7 @@ else:
         
         with st.spinner("Puxando dados consolidados do Firestore..."):
             try:
+                # Puxa a coleção direto do Firebase Manager
                 colecao_ref = st.session_state.firebase.db.collection("historico_disparos").stream()
                 lista_registros = [doc.to_dict() for doc in colecao_ref]
                 df_completo = pd.DataFrame(lista_registros)
@@ -456,6 +452,7 @@ else:
         if df_completo.empty:
             st.info("Nenhum dado de histórico localizado no Firebase para gerar indicadores.")
         else:
+            # 🛡️ BLINDAGEM ANTICRASH: Garante que colunas novas existam mesmo em registros antigos
             colunas_obrigatorias_df = [
                 "fonte", "status_envio", "houve_retorno", "tempo_ate_resposta_segundos", 
                 "timestamp_disparo", "horario_disparo", "data_envio",
@@ -465,6 +462,7 @@ else:
                 if col not in df_completo.columns:
                     df_completo[col] = None
 
+            # 🔍 SEÇÃO DE FILTROS GERAIS (SIDE-BY-SIDE NO TOPO)
             st.subheader("🎛️ Filtros Estratégicos")
             col_f1, col_f2, col_f3, col_f4 = st.columns(4)
             
@@ -473,14 +471,28 @@ else:
                 filtro_fonte = st.selectbox("Origem / Fonte do Lead:", opcoes_fonte)
                 
             with col_f2:
+                # 🕒 Tratamento inteligente unificado no formato Datetime nativo do Pandas
+                # Usamos utc=True inicialmente para aceitar o fuso horário do Firebase sem quebrar
                 df_completo['data_formatada'] = pd.to_datetime(df_completo['timestamp_disparo'], unit='s', errors='coerce', utc=True)
-                df_completo['data_formatada'] = df_completo['data_formatada'].fillna(pd.to_datetime(df_completo['horario_disparo'], errors='coerce', utc=True))
-                df_completo['data_formatada'] = df_completo['data_formatada'].fillna(pd.to_datetime(df_completo['data_envio'], errors='coerce', utc=True))
+                
+                # Rota de fuga 1: Preenche com o horario_disparo string se o timestamp não existir
+                df_completo['data_formatada'] = df_completo['data_formatada'].fillna(
+                    pd.to_datetime(df_completo['horario_disparo'], errors='coerce', utc=True)
+                )
+                # Rota de fuga 2: Preenche com o data_envio nativo do Firebase
+                df_completo['data_formatada'] = df_completo['data_formatada'].fillna(
+                    pd.to_datetime(df_completo['data_envio'], errors='coerce', utc=True)
+                )
+                # Rota de fuga 3: Fallback definitivo para o instante atual em formato UTC
                 df_completo['data_formatada'] = df_completo['data_formatada'].fillna(pd.Timestamp.now(tz='UTC'))
+                
+                # ✨ O SEGREDO: Forçamos a conversão, removemos o fuso horário (tz_localize(None)) e normalizamos as horas!
                 df_completo['data_formatada'] = pd.to_datetime(df_completo['data_formatada'], utc=True).dt.tz_localize(None).dt.normalize()
                     
+                # Extrai os limites para o componente do Streamlit ler como data pura (.date())
                 menor_data = df_completo['data_formatada'].min().date()
                 maior_data = df_completo['data_formatada'].max().date()
+                
                 periodo = st.date_input("Período do Disparo:", [menor_data, maior_data])
                 
             with col_f3:
@@ -490,12 +502,15 @@ else:
                 opcoes_status = ["Todos"] + list(df_completo["status_envio"].dropna().unique())
                 filtro_status = st.selectbox("Status Atual do WhatsApp:", opcoes_status)
 
+            # 🛠️ APLICAÇÃO DA MALHA DE FILTROS NO DATAFRAME
             df_filtrado = df_completo.copy()
+            
             if filtro_fonte != "Todos":
                 df_filtrado = df_filtrado[df_filtrado["fonte"] == filtro_fonte]
                 
             if isinstance(periodo, list) or isinstance(periodo, tuple):
                 if len(periodo) == 2:
+                    # 🎯 Como removemos o fuso da coluna acima, a comparação direta aqui fica 100% perfeita e segura
                     start_date = pd.to_datetime(periodo[0])
                     end_date = pd.to_datetime(periodo[1])
                     df_filtrado = df_filtrado[(df_filtrado["data_formatada"] >= start_date) & (df_filtrado["data_formatada"] <= end_date)]
@@ -507,7 +522,11 @@ else:
             if filtro_status != "Todos":
                 df_filtrado = df_filtrado[df_filtrado["status_envio"] == filtro_status]
 
+            # -----------------------------------------------------------------
+            # 📈 1. CABEÇALHO MACRO (MÉTRICAS CARDINAIS)
+            # -----------------------------------------------------------------
             st.markdown("### 📊 Visão Geral Macro")
+            
             total_disp = len(df_filtrado)
             total_ent = len(df_filtrado[df_filtrado['status_envio'].isin(['ENTREGUE', 'LIDO'])])
             total_lid = len(df_filtrado[df_filtrado['status_envio'] == 'LIDO'])
@@ -521,6 +540,7 @@ else:
             df_com_tempo = df_filtrado[(df_filtrado['houve_retorno'] == True) & (df_filtrado['tempo_ate_resposta_segundos'].notna())]
             t_medio_retorno = df_com_tempo['tempo_ate_resposta_segundos'].mean() if not df_com_tempo.empty else 0
 
+            # Renderização física dos cards
             c_macro = st.columns(5)
             c_macro[0].metric("Total Disparos", f"{total_disp} und")
             c_macro[1].metric("Entregues", f"{total_ent} und", f"{pct_entregue:.1f}% de envio")
@@ -529,12 +549,18 @@ else:
             c_macro[4].metric("Tempo Médio Retorno", f"{int(t_medio_retorno)}s" if t_medio_retorno > 0 else "0s")
 
             st.markdown("---")
+
+            # -----------------------------------------------------------------
+            # 🧩 2. DESEMPENHO POR BLOCOS DE MENSAGENS (ABAS)
+            # -----------------------------------------------------------------
             st.markdown("### 🧩 Análise de Conversão por Blocos Estruturais")
+            st.markdown("Compare a performance de cada frase sorteada pelo algoritmo para entender o que engaja mais o cliente.")
             
             aba_saudacao, aba_intro, aba_oferta, aba_cta, aba_concl = st.tabs([
                 "👋 Saudações", "🚀 Introduções", "💰 Ofertas", "🎯 CTAs", "🏢 Conclusões"
             ])
             
+            # Helper interno para agrupar e renderizar dataframes limpos por coluna de bloco
             def renderizar_bloco_analise(coluna_bloco):
                 if coluna_bloco in df_filtrado.columns:
                     df_agrupado = df_filtrado.groupby(coluna_bloco)
@@ -553,86 +579,19 @@ else:
             with aba_concl: renderizar_bloco_analise("bloco_conclusao")
 
             st.markdown("---")
+
+            # -----------------------------------------------------------------
+            # 🏢 3. DESEMPENHO POR FONTE LADO A LADO
+            # -----------------------------------------------------------------
             st.markdown("### 🏢 Comparativo Lado a Lado: Fontes de Leads")
+            st.markdown("Visualização analítica de performance agrupada pela origem do banco de dados:")
+            
             if "fonte" in df_filtrado.columns:
                 df_fontes_agrupado = df_filtrado.groupby("fonte")
                 df_fontes_final = calcular_metricas_completas(df_fontes_agrupado)
                 if not df_fontes_final.empty:
                     st.dataframe(df_fontes_final, use_container_width=True)
-
-
-    # =========================================================================
-    # MUNDO 3: REGISTRO DE CAMPANHAS E EXPORTAÇÃO EXCEL
-    # =========================================================================
-    elif menu_navegacao == "📦 Registro de Campanhas":
-        st.title("📦 Auditoria e Registro de Campanhas")
-        st.markdown("Controle histórico de planilhas importadas e exportação detalhada de retornos por lote.")
-        st.markdown("---")
-        
-        with st.spinner("Puxando histórico de lotes da nuvem..."):
-            try:
-                campanhas_ref = st.session_state.firebase.db.collection("campanhas").order_by("data_criacao", direction="DESCENDING").stream()
-                lista_campanhas = [doc.to_dict() for doc in campanhas_ref]
-                df_campanhas = pd.DataFrame(lista_campanhas)
-            except Exception as e:
-                st.error(f"Erro ao ler histórico de campanhas: {e}")
-                df_campanhas = pd.DataFrame()
-
-        if df_campanhas.empty:
-            st.info("Nenhuma campanha ou lote foi registrado no sistema até o momento.")
-        else:
-            df_campanhas["data_criacao"] = pd.to_datetime(df_campanhas["data_criacao"]).dt.tz_convert("America/Sao_Paulo").dt.strftime("%d/%m/%Y %H:%M:%S")
-            
-            st.subheader("📋 Planilhas e Lotes Processados")
-            
-            # ✨ ALINHAMENTO DA TABELA COM AS COLUNAS AMARRADAS EXPLICITAMENTE
-            df_ordenado = df_campanhas[["id_campanha", "nome_arquivo", "data_criacao", "quantidade_registros", "quantidade_sucesso", "vendedor"]]
-            df_ordenado.columns = ["ID da Campanha", "Nome do Arquivo / Origem", "Data do Upload", "Registros Carregados", "Enviados com Sucesso", "Operador"]
-            
-            st.dataframe(df_ordenado, use_container_width=True, hide_index=True)
-            
-            st.markdown("---")
-            st.subheader("📥 Exportação Detalhada por Campanha")
-            
-            lista_ids_campanhas = list(df_campanhas["id_campanha"].unique())
-            campanha_selecionada = st.selectbox("Escolha uma campanha para analisar e baixar o Excel:", lista_ids_campanhas)
-            
-            if campanha_selecionada:
-                with st.spinner(f"Processando relatório detalhado do lote {campanha_selecionada}..."):
-                    try:
-                        leads_lote_ref = st.session_state.firebase.db.collection("historico_disparos").where("id_campanha", "==", campanha_selecionada).stream()
-                        dados_detalhes = []
-                        for doc in leads_lote_ref:
-                            d = doc.to_dict()
-                            dados_detalhes.append({
-                                "CPF": d.get("cpf"),
-                                "Nome": d.get("nome"),
-                                "Telefone": d.get("telefone"),
-                                "Origem/Fonte": d.get("fonte"),
-                                "Data de Envio": d.get("horario_disparo"),
-                                "Status WhatsApp": d.get("status_envio"),
-                                "Respondeu?": "Sim" if d.get("houve_retorno") else "Não",
-                                "Conteúdo da Resposta": d.get("conteudo_resposta", ""),
-                                "Data da Resposta": d.get("data_resposta", "")
-                            })
-                        df_detalhes = pd.DataFrame(dados_detalhes)
-                    except Exception as err:
-                        st.error(f"Erro ao buscar detalhes: {err}")
-                        df_detalhes = pd.DataFrame()
-                
-                if df_detalhes.empty:
-                    st.warning("Nenhum registro individual foi localizado para este ID de campanha no banco.")
                 else:
-                    st.markdown(f"📊 **Visualização prévia do lote:** {len(df_detalhes)} registros localizados.")
-                    st.dataframe(df_detalhes, use_container_width=True, hide_index=True)
-                    
-                    buffer_excel = io.BytesIO()
-                    with pd.ExcelWriter(buffer_excel, engine="openpyxl") as writer:
-                        df_detalhes.to_excel(writer, index=False, sheet_name="Resultados Disparos")
-                    
-                    st.download_button(
-                        label="📥 Baixar Planilha Excel do Lote",
-                        data=buffer_excel.getvalue(),
-                        file_name=f"Relatorio_{campanha_selecionada}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
+                    st.info("Nenhuma fonte identificada para agrupamento lateral.")
+            else:
+                st.warning("Coluna de fontes ausente no DataFrame.")
