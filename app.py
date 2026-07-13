@@ -354,16 +354,18 @@ else:
                             
                             status_atual_linha = "Erro"
                             
-                            # 🛡️ 1. TRAVA DE FREQUÊNCIA (JANELA DE 5 DIAS)
+                            # 🛡️ 1. TRAVA DE FREQUÊNCIA (JANELA DE 5 DIAS) - USANDO DATA_ENVIO NATIVO
                             cpf_atual = str(item["CPF"]).strip()
-                            limite_5_dias = time.time() - (5 * 24 * 60 * 60)
+                            
+                            # Firestore armazena datas em UTC, então criamos o limite com base no UTC absoluto
+                            limite_5_dias = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=5)
                             ja_enviado_recente = False
                             
                             try:
-                                # Consulta o banco em tempo real antes de disparar a API
+                                # Consulta o banco comparando diretamente com o campo data_envio
                                 query_5_dias = st.session_state.firebase.db.collection("historico_disparos")\
                                     .where("cpf", "==", cpf_atual)\
-                                    .where("timestamp_disparo", ">=", limite_5_dias)\
+                                    .where("data_envio", ">=", limite_5_dias)\
                                     .limit(1).stream()
                                 
                                 if any(query_5_dias):
